@@ -1,4 +1,4 @@
--- EZEK v32.1
+-- EZEK v32.2
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UIS = game:GetService("UserInputService")
@@ -51,11 +51,8 @@ local function getTodos()
         for _, v in pairs(pasta:GetChildren()) do
             if v:IsA("Model") and not vistos[v] and getParte(v) then
                 local tipo = getTipo(v)
-                -- 🔥 AQUI: Se for objeto e o filtro estiver ligado, ele adiciona, mesmo sem vida.
                 if tipo == "objetos" then
-                    if filtros.objetos then
-                        table.insert(lista, v); vistos[v]=true
-                    end
+                    if filtros.objetos then table.insert(lista, v); vistos[v]=true end
                 elseif temVida(v) then
                     table.insert(lista, v); vistos[v]=true
                 end
@@ -72,14 +69,16 @@ local function acharAlvo()
     local cp = camera.CFrame.Position
     local cl = camera.CFrame.LookVector
     for _, m in pairs(getTodos()) do
-        -- O Lock só pega quem tem vida (igual antes)
-        if filtros[getTipo(m)] and temVida(m) then
-            local p = getParte(m)
-            if p then
-                local dist = (p.Position - cp).Magnitude
-                if dist > 2 then
-                    local ang = math.acos(math.clamp(cl:Dot((p.Position - cp).Unit), -1, 1))
-                    if ang < angMin then angMin = ang; melhor = m end
+        -- 🔥 TRAVA PRA NÃO PEGAR VOCÊ MESMO
+        if m ~= player.Character and not m:IsDescendantOf(player.Character) then
+            if filtros[getTipo(m)] and temVida(m) then
+                local p = getParte(m)
+                if p then
+                    local dist = (p.Position - cp).Magnitude
+                    if dist > 4 then -- 🔥 Aumentei pra 4 metros (evita grudar em você)
+                        local ang = math.acos(math.clamp(cl:Dot((p.Position - cp).Unit), -1, 1))
+                        if ang < angMin then angMin = ang; melhor = m end
+                    end
                 end
             end
         end
@@ -221,11 +220,10 @@ RunService.RenderStepped:Connect(function()
                             box.BackgroundTransparency = 1
                             
                             local st = Instance.new("UIStroke", box)
-                            -- Cor diferente pra objetos
                             if getTipo(m) == "objetos" then
-                                st.Color = Color3.fromRGB(255, 150, 0) -- Laranja
+                                st.Color = Color3.fromRGB(255, 150, 0)
                             else
-                                st.Color = Color3.fromRGB(0, 255, 255) -- Ciano
+                                st.Color = Color3.fromRGB(0, 255, 255)
                             end
                             st.Thickness = 1.5
                             
@@ -261,7 +259,7 @@ Instance.new("UICorner", main).CornerRadius = UDim.new(0,8)
 
 local title = Instance.new("TextLabel", main)
 title.Size = UDim2.new(1,0,0,35); title.BackgroundColor3 = Color3.fromRGB(15,15,20)
-title.Text = "EZEK v32.1"; title.TextColor3 = Color3.fromRGB(0,255,255); title.Font = Enum.Font.GothamBold; title.TextSize = 14
+title.Text = "EZEK v32.2"; title.TextColor3 = Color3.fromRGB(0,255,255); title.Font = Enum.Font.GothamBold; title.TextSize = 14
 Instance.new("UICorner", title).CornerRadius = UDim.new(0,8)
 
 local minBtn = Instance.new("TextButton", title)
@@ -328,7 +326,8 @@ local function mkChk(txt, chave, y)
     Instance.new("UICorner", btn).CornerRadius = UDim.new(0,4)
     
     local lb = Instance.new("TextLabel", main)
-    lb.Size = UDim2.new(1,-40,1,0); lb.Position = UDim2.new(0,36,0,0); lb.BackgroundTransparency = 1
+    -- 🔥 AQUI ESTAVA O ERRO DO TEXTO: Tamanho e posição corretos
+    lb.Size = UDim2.new(1,-40,0,20); lb.Position = UDim2.new(0,36,0,y); lb.BackgroundTransparency = 1
     lb.Text = txt; lb.TextColor3 = Color3.new(1,1,1); lb.Font = Enum.Font.GothamMedium; lb.TextSize = 12; lb.TextXAlignment = Enum.TextXAlignment.Left
     
     lb.InputBegan:Connect(function(i) if i.UserInputType == Enum.UserInputType.MouseButton1 or i.UserInputType == Enum.UserInputType.Touch then 
@@ -367,4 +366,4 @@ UIS.InputEnded:Connect(function(input)
     if input.KeyCode == Enum.KeyCode.ButtonL2 then l2 = false end
 end)
 
-print("⚡ EZEK v32.1 Carregado! | P=Lock O=ESP | R1+R2=Lock L1+L2=ESP")
+print("⚡ EZEK v32.2 Carregado! | P=Lock O=ESP | R1+R2=Lock L1+L2=ESP")
