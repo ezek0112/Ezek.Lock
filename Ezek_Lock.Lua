@@ -1,4 +1,4 @@
--- EZEK v32.0
+-- EZEK v32.1
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UIS = game:GetService("UserInputService")
@@ -49,8 +49,16 @@ local function getTodos()
     local function proc(pasta, prof)
         if prof > 5 then return end
         for _, v in pairs(pasta:GetChildren()) do
-            if v:IsA("Model") and not vistos[v] and temVida(v) and getParte(v) then
-                table.insert(lista, v); vistos[v]=true
+            if v:IsA("Model") and not vistos[v] and getParte(v) then
+                local tipo = getTipo(v)
+                -- 🔥 AQUI: Se for objeto e o filtro estiver ligado, ele adiciona, mesmo sem vida.
+                if tipo == "objetos" then
+                    if filtros.objetos then
+                        table.insert(lista, v); vistos[v]=true
+                    end
+                elseif temVida(v) then
+                    table.insert(lista, v); vistos[v]=true
+                end
             end
             if v:IsA("Folder") or v:IsA("Model") then proc(v, prof+1) end
         end
@@ -64,6 +72,7 @@ local function acharAlvo()
     local cp = camera.CFrame.Position
     local cl = camera.CFrame.LookVector
     for _, m in pairs(getTodos()) do
+        -- O Lock só pega quem tem vida (igual antes)
         if filtros[getTipo(m)] and temVida(m) then
             local p = getParte(m)
             if p then
@@ -197,7 +206,7 @@ RunService.RenderStepped:Connect(function()
 
     if espAtivo then
         for _, m in pairs(getTodos()) do
-            if filtros[getTipo(m)] and temVida(m) then
+            if filtros[getTipo(m)] and (temVida(m) or getTipo(m) == "objetos") then
                 local p = getParte(m)
                 if p then
                     local top = camera:WorldToViewportPoint(p.Position + Vector3.new(0,2.5,0))
@@ -212,7 +221,13 @@ RunService.RenderStepped:Connect(function()
                             box.BackgroundTransparency = 1
                             
                             local st = Instance.new("UIStroke", box)
-                            st.Color = Color3.fromRGB(0, 255, 255); st.Thickness = 1.5
+                            -- Cor diferente pra objetos
+                            if getTipo(m) == "objetos" then
+                                st.Color = Color3.fromRGB(255, 150, 0) -- Laranja
+                            else
+                                st.Color = Color3.fromRGB(0, 255, 255) -- Ciano
+                            end
+                            st.Thickness = 1.5
                             
                             local hp, mx = getVida(m)
                             local dist = math.floor((p.Position - root.Position).Magnitude)
@@ -223,7 +238,12 @@ RunService.RenderStepped:Connect(function()
                             
                             local hpt = Instance.new("TextLabel", box)
                             hpt.Size = UDim2.new(1,0,0,14); hpt.Position = UDim2.new(0,0,1,2); hpt.BackgroundTransparency = 1
-                            hpt.Text = string.format("%d HP | %dm", math.floor(hp or 0), dist); hpt.TextColor3 = Color3.fromRGB(0,255,0); hpt.TextStrokeTransparency = 0; hpt.Font = Enum.Font.GothamBold; hpt.TextSize = 10
+                            if hp then
+                                hpt.Text = string.format("%d HP | %dm", math.floor(hp), dist); hpt.TextColor3 = Color3.fromRGB(0,255,0)
+                            else
+                                hpt.Text = string.format("%dm", dist); hpt.TextColor3 = Color3.fromRGB(255,150,0)
+                            end
+                            hpt.TextStrokeTransparency = 0; hpt.Font = Enum.Font.GothamBold; hpt.TextSize = 10
                         end
                     end
                 end
@@ -241,7 +261,7 @@ Instance.new("UICorner", main).CornerRadius = UDim.new(0,8)
 
 local title = Instance.new("TextLabel", main)
 title.Size = UDim2.new(1,0,0,35); title.BackgroundColor3 = Color3.fromRGB(15,15,20)
-title.Text = "EZEK v32.0"; title.TextColor3 = Color3.fromRGB(0,255,255); title.Font = Enum.Font.GothamBold; title.TextSize = 14
+title.Text = "EZEK v32.1"; title.TextColor3 = Color3.fromRGB(0,255,255); title.Font = Enum.Font.GothamBold; title.TextSize = 14
 Instance.new("UICorner", title).CornerRadius = UDim.new(0,8)
 
 local minBtn = Instance.new("TextButton", title)
@@ -347,4 +367,4 @@ UIS.InputEnded:Connect(function(input)
     if input.KeyCode == Enum.KeyCode.ButtonL2 then l2 = false end
 end)
 
-print("⚡ EZEK v32.0 Carregado! | P=Lock O=ESP | R1+R2=Lock L1+L2=ESP")
+print("⚡ EZEK v32.1 Carregado! | P=Lock O=ESP | R1+R2=Lock L1+L2=ESP")
