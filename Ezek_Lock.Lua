@@ -1,4 +1,4 @@
--- EZEK v39.0 - O Lock Funciona de Vdd
+-- EZEK v41.0 - ESP de Objetos apenas Interagíveis
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UIS = game:GetService("UserInputService")
@@ -16,12 +16,27 @@ local alvo, hpBar = nil, nil
 local align, attach = nil, nil
 local miraPeito = false
 local alturaCam = 2.0
-local filtros = {players=true, dummies=true, monstros=true, objetos=true}
+local filtros = {players=true, dummies=true, monstros=true, objetos=true} 
 local espGui = Instance.new("ScreenGui", player.PlayerGui)
 espGui.Name = "EZEK_ESP"
 
 local espEl = {}
 local alvosESP = {}
+
+-- FUNÇÃO QUE CHECA SE É INTERAGÍVEL (Baú, Porta, Item)
+local function temInteracao(m)
+    if not m or not m:IsA("Model") then return false end
+    -- Se tem prompt de interação ou click detector
+    if m:FindFirstChildOfClass("ProximityPrompt") or m:FindFirstChildWhichIsA("ProximityPrompt", true) then return true end
+    if m:FindFirstChildOfClass("ClickDetector") or m:FindFirstChildWhichIsA("ClickDetector", true) then return true end
+    
+    -- Se o nome tem palavras chaves de itens
+    local n = string.lower(m.Name)
+    for _, p in ipairs({"chest","bau","item","drop","loot","coin","door","porta","portal","crate","caixa","shop","gift","key","chave","crystal","ore","minerio"}) do
+        if n:find(p) then return true end
+    end
+    return false
+end
 
 local function getVida(m)
     local h = m:FindFirstChildOfClass("Humanoid") or m:FindFirstChildWhichIsA("Humanoid", true)
@@ -41,9 +56,12 @@ end
 local function getTipo(m)
     if Players:GetPlayerFromCharacter(m) then return "players" end
     local n = string.lower(m.Name)
-    if n:find("dummy") or n:find("training") or n:find("test") then return "dummies" end
+    if n:find("dummy") or n:find("training") then return "dummies" end
     if m:FindFirstChildOfClass("Humanoid") or temVida(m) then return "monstros" end
-    return "objetos"
+    
+    -- Se chegou aqui, só é objeto se for interagível
+    if temInteracao(m) then return "objetos" end
+    return "outros" 
 end
 
 local function carregarAlvos()
@@ -52,17 +70,17 @@ local function carregarAlvos()
         if p ~= player and p.Character and temVida(p.Character) then table.insert(lista, p.Character); vistos[p.Character]=true end
     end
     local function proc(pasta, prof)
-        if prof > 5 then return end -- Aumentei um pouco a profundidade tbm
+        if prof > 6 then return end
         for _, v in pairs(pasta:GetChildren()) do
             if v:IsA("Model") and not vistos[v] and getParte(v) then
                 local tipo = getTipo(v)
+                
                 if tipo == "objetos" then
                     if filtros.objetos then table.insert(lista, v); vistos[v]=true end
-                elseif temVida(v) then
-                    table.insert(lista, v); vistos[v]=true
+                elseif (tipo == "players" and filtros.players) or (tipo == "dummies" and filtros.dummies) or (tipo == "monstros" and filtros.monstros) then
+                    if temVida(v) then table.insert(lista, v); vistos[v]=true end
                 end
             end
-            -- 🔥 AQUI ESTAVA O ERRO: Faltava o "or v:IsA("Model")"
             if v:IsA("Folder") or v:IsA("Model") then proc(v, prof+1) end
         end
     end
@@ -84,11 +102,11 @@ local function acharAlvo()
     local cl = camera.CFrame.LookVector
     for _, m in pairs(alvosESP) do
         if m ~= player.Character and not m:IsDescendantOf(player.Character) then
-            if filtros[getTipo(m)] and temVida(m) then
+            if filtros[getTipo(m)] and (temVida(m) or getTipo(m) == "objetos") then
                 local p = getParte(m)
                 if p then
                     local dist = (p.Position - cp).Magnitude
-                    if dist > 0.5 then -- Diminuí pra 0.5, se o dummy tiver colado em você ele pega
+                    if dist > 0.5 then
                         local ang = math.acos(math.clamp(cl:Dot((p.Position - cp).Unit), -1, 1))
                         if ang < angMin then angMin = ang; melhor = m end
                     end
@@ -120,17 +138,12 @@ local function criarHPBar(m)
     local nome = Instance.new("TextLabel", hpBar)
     nome.Size = UDim2.new(1,0,0,14); nome.BackgroundTransparency = 1; nome.Text = m.Name; nome.TextColor3 = Color3.new(1,1,1); nome.TextStrokeTransparency = 0; nome.Font = Enum.Font.GothamBold; nome.TextSize = 11
     
-    local bg = Instance.new("Frame", hpBar)
-    bg.Name = "BG"; bg.Size = UDim2.new(1,0,0,10); bg.Position = UDim2.new(0,0,0,16); bg.BackgroundColor3 = Color3.new(0,0,0); bg.BorderSizePixel = 0
-    local fill = Instance.new("Frame", bg)
-    fill.Name = "Fill"; fill.Size = UDim2.new(1,0,1,0); fill.BackgroundColor3 = Color3.fromRGB(0,200,0); fill.BorderSizePixel = 0
-    
     local hpTxt = Instance.new("TextLabel", hpBar)
-    hpTxt.Name = "Txt"; hpTxt.Size = UDim2.new(1,0,0,14); hpTxt.Position = UDim2.new(0,0,0,26); hpTxt.BackgroundTransparency = 1; hpTxt.TextColor3 = Color3.new(1,1,1); hpTxt.TextStrokeTransparency = 0; hpTxt.Font = Enum.Font.GothamBold; hpTxt.TextSize = 10
+    hpTxt.Name = "Txt"; hpTxt.Size = UDim2.new(1,0,0,14); hpTxt.Position = UDim2.new(0,0,0,16); hpTxt.BackgroundTransparency = 1; hpTxt.TextColor3 = Color3.fromRGB(255,150,0); hpTxt.TextStrokeTransparency = 0; hpTxt.Font = Enum.Font.GothamBold; hpTxt.TextSize = 10
 end
 
 local function atualizarLock()
-    if not ativo or not alvo or not alvo.Parent or not temVida(alvo) then pararLock() return end
+    if not ativo or not alvo or not alvo.Parent then pararLock() return end
     local char = player.Character
     local root = char and char:FindFirstChild("HumanoidRootPart")
     local h = char and char:FindFirstChildOfClass("Humanoid")
@@ -147,7 +160,7 @@ local function atualizarLock()
     if camera.CameraSubject ~= h then camera.CameraSubject = h end
 
     local miraPos = p.Position
-    if miraPeito then
+    if miraPeito and temVida(alvo) then
         local torso = alvo:FindFirstChild("UpperTorso") or alvo:FindFirstChild("Torso")
         if torso then miraPos = torso.Position end
     else
@@ -162,11 +175,11 @@ local function atualizarLock()
     if hpBar then
         local hp, mx = getVida(alvo)
         if hp then
-            local pct = math.clamp(hp/(mx or 100),0,1)
-            local fill = hpBar.BG.Fill
-            fill.Size = UDim2.new(pct,0,1,0)
-            fill.BackgroundColor3 = pct>0.6 and Color3.fromRGB(0,200,0) or (pct>0.3 and Color3.fromRGB(255,200,0) or Color3.fromRGB(255,50,50))
             hpBar.Txt.Text = string.format("%d/%d | %dm", math.floor(hp), math.floor(mx or 100), math.floor((p.Position - root.Position).Magnitude))
+            hpBar.Txt.TextColor3 = Color3.fromRGB(0,255,0)
+        else
+            hpBar.Txt.Text = string.format("%dm", math.floor((p.Position - root.Position).Magnitude))
+            hpBar.Txt.TextColor3 = Color3.fromRGB(255,150,0)
         end
     end
 end
@@ -184,7 +197,7 @@ RunService.Heartbeat:Connect(function()
     if not ativo then alvoPreview = acharAlvo() end
 
     for m, d in pairs(espEl) do
-        if not m.Parent or not temVida(m) or not filtros[getTipo(m)] then
+        if not m.Parent or (not temVida(m) and getTipo(m) ~= "objetos") then
             d.cont:Destroy()
             espEl[m] = nil
         end
@@ -193,7 +206,7 @@ RunService.Heartbeat:Connect(function()
     for _, m in pairs(alvosESP) do
         local p = getParte(m)
         local isPreview = (m == alvoPreview)
-        local showESP = (espAtivo and filtros[getTipo(m)] and (temVida(m) or getTipo(m) == "objetos"))
+        local showESP = (espAtivo and filtros[getTipo(m)])
 
         if p and (showESP or isPreview) then
             local top = camera:WorldToViewportPoint(p.Position + Vector3.new(0,2.5,0))
@@ -262,7 +275,7 @@ Instance.new("UICorner", main).CornerRadius = UDim.new(0,8)
 
 local title = Instance.new("TextLabel", main)
 title.Size = UDim2.new(1,0,0,35); title.BackgroundColor3 = Color3.fromRGB(15,15,20)
-title.Text = "EZEK v39.0"; title.TextColor3 = Color3.fromRGB(0,255,255); title.Font = Enum.Font.GothamBold; title.TextSize = 14
+title.Text = "EZEK v41.0"; title.TextColor3 = Color3.fromRGB(0,255,255); title.Font = Enum.Font.GothamBold; title.TextSize = 14
 Instance.new("UICorner", title).CornerRadius = UDim.new(0,8)
 
 local dragging, dragStart, startPos
@@ -300,7 +313,7 @@ local function toggleLockManual()
         carregarAlvos()
         local t = acharAlvo()
         if not t then 
-            print("❌ Nenhum alvo na mira. O quadrado verde apareceu em alguém?")
+            print("❌ Nenhum alvo na mira.")
             return 
         end
         alvo = t; ativo = true
@@ -367,6 +380,7 @@ local function mkChk(txt, chave, y)
         filtros[chave] = not filtros[chave]
         btn.BackgroundColor3 = filtros[chave] and Color3.fromRGB(0,150,0) or Color3.fromRGB(60,60,75)
         btn.Text = filtros[chave] and "✓" or ""
+        carregarAlvos()
     end end)
 end
 
@@ -396,4 +410,4 @@ UIS.InputEnded:Connect(function(input)
     if input.KeyCode == Enum.KeyCode.ButtonL2 then l2 = false end
 end)
 
-print("⚡ EZEK v39.0 Carregado! | K=Lock L=ESP | Agora pega Dummy e Monstro.")
+print("⚡ EZEK v41.0 Carregado! Interagíveis separados.")
