@@ -1,4 +1,4 @@
--- EZEK v33.0 - PC Otimizado
+-- EZEK v34.0 - PC ULTRA LEVE
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UIS = game:GetService("UserInputService")
@@ -18,6 +18,12 @@ local alturaCam = 2.0
 local filtros = {players=true, dummies=true, monstros=true, objetos=true}
 local espGui = Instance.new("ScreenGui", player.PlayerGui)
 espGui.Name = "EZEK_ESP"
+
+-- CACHE DO ESP (Pra não criar mil caixas)
+local espEl = {}
+local alvosESP = {}
+local cacheT = 0
+local lastEspDraw = 0
 
 local function getVida(m)
     local h = m:FindFirstChildOfClass("Humanoid") or m:FindFirstChildWhichIsA("Humanoid", true)
@@ -42,7 +48,11 @@ local function getTipo(m)
     return "objetos"
 end
 
-local function getTodos()
+local function atualizarLista()
+    local t = tick()
+    if t - cacheT < 1 then return end -- Atualiza a lista só 1x por segundo (Economia de processamento)
+    cacheT = t
+    
     local lista, vistos = {}, {}
     for _, p in pairs(Players:GetPlayers()) do
         if p ~= player and p.Character and temVida(p.Character) then table.insert(lista, p.Character); vistos[p.Character]=true end
@@ -62,14 +72,14 @@ local function getTodos()
         end
     end
     proc(workspace, 0)
-    return lista
+    alvosESP = lista
 end
 
 local function acharAlvo()
     local melhor, angMin = nil, math.rad(120)
     local cp = camera.CFrame.Position
     local cl = camera.CFrame.LookVector
-    for _, m in pairs(getTodos()) do
+    for _, m in pairs(alvosESP) do
         if m ~= player.Character and not m:IsDescendantOf(player.Character) then
             if filtros[getTipo(m)] and temVida(m) then
                 local p = getParte(m)
@@ -159,6 +169,7 @@ end
 
 local function toggleLock()
     if ativo then pararLock() else
+        atualizarLista()
         local t = acharAlvo()
         if not t then return end
         alvo = t; ativo = true
@@ -173,79 +184,87 @@ local function toggleLock()
     end
 end
 
+-- LOOP DO ESP E PREVIEW (Otimizado)
 RunService.RenderStepped:Connect(function()
-    espGui:ClearAllChildren()
-    
+    if tick() - lastEspDraw < 0.03 then return end -- Limita a 33 FPS (Economia de GPU)
+    lastEspDraw = tick()
+
+    atualizarLista()
+
     local char = player.Character
     local root = char and char:FindFirstChild("HumanoidRootPart")
     if not root then return end
 
-    if not ativo then
-        local pAlvo = acharAlvo()
-        if pAlvo then
-            local p = getParte(pAlvo)
-            if p then
-                local top = camera:WorldToViewportPoint(p.Position + Vector3.new(0,2.5,0))
-                local bot = camera:WorldToViewportPoint(p.Position - Vector3.new(0,2.5,0))
-                if top.Z > 0 and bot.Z > 0 then
-                    local alt = math.abs(top.Y - bot.Y)
-                    if alt > 5 then
-                        local box = Instance.new("Frame", espGui)
-                        box.AnchorPoint = Vector2.new(0.5, 0.5)
-                        box.Size = UDim2.new(0, alt*0.55, 0, alt)
-                        box.Position = UDim2.new(0, (top.X+bot.X)/2, 0, (top.Y+bot.Y)/2)
-                        box.BackgroundTransparency = 1
-                        local st = Instance.new("UIStroke", box)
-                        st.Color = Color3.fromRGB(0, 255, 0); st.Thickness = 2
-                    end
-                end
-            end
+    -- Limpa os ESPs de quem morreu/saiu
+    for m, d in pairs(espEl) do
+        if not m.Parent or not temVida(m) or not filtros[getTipo(m)] then
+            d.cont:Destroy()
+            espEl[m] = nil
         end
     end
 
-    if espAtivo then
-        for _, m in pairs(getTodos()) do
-            if filtros[getTipo(m)] and (temVida(m) or getTipo(m) == "objetos") then
-                local p = getParte(m)
-                if p then
-                    local top = camera:WorldToViewportPoint(p.Position + Vector3.new(0,2.5,0))
-                    local bot = camera:WorldToViewportPoint(p.Position - Vector3.new(0,2.5,0))
-                    if top.Z > 0 and bot.Z > 0 then
-                        local alt = math.abs(top.Y - bot.Y)
-                        if alt > 5 then
-                            local box = Instance.new("Frame", espGui)
-                            box.AnchorPoint = Vector2.new(0.5, 0.5)
-                            box.Size = UDim2.new(0, alt*0.55, 0, alt)
-                            box.Position = UDim2.new(0, (top.X+bot.X)/2, 0, (top.Y+bot.Y)/2)
-                            box.BackgroundTransparency = 1
+    -- Atualiza ou cria os ESPs
+    for _, m in pairs(alvosESP) do
+        if (espAtivo and (temVida(m) or getTipo(m) == "objetos")) or (not ativo and m == acharAlvo()) then
+            local p = getParte(m)
+            if p then
+                local top = camera:WorldToViewportPoint(p.Position + Vector3.new(0,2.5,0))
+                local bot = camera:WorldToViewportPoint(p.Position - Vector3.new(0,2.5,0))
+                
+                if top.Z > 0 and bot.Z > 0 then
+                    local alt = math.abs(top.Y - bot.Y)
+                    if alt > 5 then
+                        local isPreview = (m == acharAlvo() and not ativo)
+                        
+                        if not espEl[m] then
+                            local cont = Instance.new("Frame", espGui)
+                            cont.BackgroundTransparency = 1
+                            cont.AnchorPoint = Vector2.new(0.5, 0.5)
+                            local st = Instance.new("UIStroke", cont)
                             
-                            local st = Instance.new("UIStroke", box)
-                            if getTipo(m) == "objetos" then
-                                st.Color = Color3.fromRGB(255, 150, 0)
-                            else
-                                st.Color = Color3.fromRGB(0, 255, 255)
-                            end
-                            st.Thickness = 1.5
+                            local nm = Instance.new("TextLabel", cont)
+                            nm.Size = UDim2.new(1,0,0,14); nm.Position = UDim2.new(0,0,0,-16); nm.BackgroundTransparency = 1
+                            nm.Font = Enum.Font.GothamBold; nm.TextSize = 10; nm.TextStrokeTransparency = 0
+                            
+                            local hpt = Instance.new("TextLabel", cont)
+                            hpt.Size = UDim2.new(1,0,0,14); hpt.Position = UDim2.new(0,0,1,2); hpt.BackgroundTransparency = 1
+                            hpt.Font = Enum.Font.GothamBold; hpt.TextSize = 10; hpt.TextStrokeTransparency = 0
+                            
+                            espEl[m] = {cont=cont, st=st, nm=nm, hpt=hpt}
+                        end
+                        
+                        local d = espEl[m]
+                        d.cont.Visible = true
+                        d.cont.Size = UDim2.new(0, alt*0.55, 0, alt)
+                        d.cont.Position = UDim2.new(0, (top.X+bot.X)/2, 0, (top.Y+bot.Y)/2)
+                        
+                        if isPreview then
+                            d.st.Color = Color3.fromRGB(0, 255, 0); d.st.Thickness = 2
+                            d.nm.Visible = false; d.hpt.Visible = false
+                        else
+                            if getTipo(m) == "objetos" then d.st.Color = Color3.fromRGB(255, 150, 0) else d.st.Color = Color3.fromRGB(0, 255, 255) end
+                            d.st.Thickness = 1.5
+                            d.nm.Visible = true; d.hpt.Visible = true
                             
                             local hp, mx = getVida(m)
                             local dist = math.floor((p.Position - root.Position).Magnitude)
                             
-                            local nm = Instance.new("TextLabel", box)
-                            nm.Size = UDim2.new(1,0,0,14); nm.Position = UDim2.new(0,0,0,-16); nm.BackgroundTransparency = 1
-                            nm.Text = m.Name; nm.TextColor3 = st.Color; nm.TextStrokeTransparency = 0; nm.Font = Enum.Font.GothamBold; nm.TextSize = 10
-                            
-                            local hpt = Instance.new("TextLabel", box)
-                            hpt.Size = UDim2.new(1,0,0,14); hpt.Position = UDim2.new(0,0,1,2); hpt.BackgroundTransparency = 1
+                            d.nm.Text = m.Name; d.nm.TextColor3 = d.st.Color
                             if hp then
-                                hpt.Text = string.format("%d HP | %dm", math.floor(hp), dist); hpt.TextColor3 = Color3.fromRGB(0,255,0)
+                                d.hpt.Text = string.format("%d HP | %dm", math.floor(hp), dist); d.hpt.TextColor3 = Color3.fromRGB(0,255,0)
                             else
-                                hpt.Text = string.format("%dm", dist); hpt.TextColor3 = Color3.fromRGB(255,150,0)
+                                d.hpt.Text = string.format("%dm", dist); d.hpt.TextColor3 = Color3.fromRGB(255,150,0)
                             end
-                            hpt.TextStrokeTransparency = 0; hpt.Font = Enum.Font.GothamBold; hpt.TextSize = 10
                         end
+                    else
+                        if espEl[m] then espEl[m].cont.Visible = false end
                     end
+                else
+                    if espEl[m] then espEl[m].cont.Visible = false end
                 end
             end
+        else
+            if espEl[m] then espEl[m].cont.Visible = false end
         end
     end
 end)
@@ -259,7 +278,7 @@ Instance.new("UICorner", main).CornerRadius = UDim.new(0,8)
 
 local title = Instance.new("TextLabel", main)
 title.Size = UDim2.new(1,0,0,35); title.BackgroundColor3 = Color3.fromRGB(15,15,20)
-title.Text = "EZEK v33.0"; title.TextColor3 = Color3.fromRGB(0,255,255); title.Font = Enum.Font.GothamBold; title.TextSize = 14
+title.Text = "EZEK v34.0"; title.TextColor3 = Color3.fromRGB(0,255,255); title.Font = Enum.Font.GothamBold; title.TextSize = 14
 Instance.new("UICorner", title).CornerRadius = UDim.new(0,8)
 
 local minBtn = Instance.new("TextButton", title)
@@ -341,16 +360,10 @@ mkChk("Dummies", "dummies", 245)
 mkChk("Monstros", "monstros", 270)
 mkChk("Objetos", "objetos", 295)
 
--- 🔥 NOVO SISTEMA DE TECLAS PRO PC (ContextActionService)
-CAS:BindAction("EzekLock", function(_, state)
-    if state == Enum.UserInputState.Begin then bLock:Activate() end
-end, false, Enum.KeyCode.P)
+-- BINDS DO PC
+CAS:BindAction("EzekLock", function(_, state) if state == Enum.UserInputState.Begin then bLock:Activate() end end, false, Enum.KeyCode.P)
+CAS:BindAction("EzekEsp", function(_, state) if state == Enum.UserInputState.Begin then bEsp:Activate() end end, false, Enum.KeyCode.O)
 
-CAS:BindAction("EzekEsp", function(_, state)
-    if state == Enum.UserInputState.Begin then bEsp:Activate() end
-end, false, Enum.KeyCode.O)
-
--- 🔥 CONTROLE (R1+R2 e L1+L2) NO PC
 local r1,r2,l1,l2 = false,false,false,false
 UIS.InputBegan:Connect(function(input, gp)
     if input.KeyCode == Enum.KeyCode.ButtonR1 then r1 = true end
@@ -369,4 +382,4 @@ UIS.InputEnded:Connect(function(input)
     if input.KeyCode == Enum.KeyCode.ButtonL2 then l2 = false end
 end)
 
-print("⚡ EZEK v33.0 Carregado! | P=Lock O=ESP | Controle: R1+R2 e L1+L2")
+print("⚡ EZEK v34.0 PC Otimizado Carregado! | P=Lock O=ESP")
