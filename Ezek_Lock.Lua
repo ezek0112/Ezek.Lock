@@ -1,4 +1,4 @@
--- EZEK v38.2 - Quadrado Verde Consertado
+-- EZEK v39.0 - O Lock Funciona de Vdd
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UIS = game:GetService("UserInputService")
@@ -41,7 +41,7 @@ end
 local function getTipo(m)
     if Players:GetPlayerFromCharacter(m) then return "players" end
     local n = string.lower(m.Name)
-    if n:find("dummy") or n:find("training") then return "dummies" end
+    if n:find("dummy") or n:find("training") or n:find("test") then return "dummies" end
     if m:FindFirstChildOfClass("Humanoid") or temVida(m) then return "monstros" end
     return "objetos"
 end
@@ -52,7 +52,7 @@ local function carregarAlvos()
         if p ~= player and p.Character and temVida(p.Character) then table.insert(lista, p.Character); vistos[p.Character]=true end
     end
     local function proc(pasta, prof)
-        if prof > 4 then return end
+        if prof > 5 then return end -- Aumentei um pouco a profundidade tbm
         for _, v in pairs(pasta:GetChildren()) do
             if v:IsA("Model") and not vistos[v] and getParte(v) then
                 local tipo = getTipo(v)
@@ -62,7 +62,8 @@ local function carregarAlvos()
                     table.insert(lista, v); vistos[v]=true
                 end
             end
-            if v:IsA("Folder") then proc(v, prof+1) end
+            -- 🔥 AQUI ESTAVA O ERRO: Faltava o "or v:IsA("Model")"
+            if v:IsA("Folder") or v:IsA("Model") then proc(v, prof+1) end
         end
     end
     proc(workspace, 0)
@@ -87,7 +88,7 @@ local function acharAlvo()
                 local p = getParte(m)
                 if p then
                     local dist = (p.Position - cp).Magnitude
-                    if dist > 1 then
+                    if dist > 0.5 then -- Diminuí pra 0.5, se o dummy tiver colado em você ele pega
                         local ang = math.acos(math.clamp(cl:Dot((p.Position - cp).Unit), -1, 1))
                         if ang < angMin then angMin = ang; melhor = m end
                     end
@@ -179,7 +180,6 @@ RunService.Heartbeat:Connect(function()
     local root = char and char:FindFirstChild("HumanoidRootPart")
     if not root then return end
 
-    -- 🔥 SEM TRAVA DE RETORNO. O quadrado verde funciona independente do ESP/Lock.
     local alvoPreview = nil
     if not ativo then alvoPreview = acharAlvo() end
 
@@ -262,7 +262,7 @@ Instance.new("UICorner", main).CornerRadius = UDim.new(0,8)
 
 local title = Instance.new("TextLabel", main)
 title.Size = UDim2.new(1,0,0,35); title.BackgroundColor3 = Color3.fromRGB(15,15,20)
-title.Text = "EZEK v38.2"; title.TextColor3 = Color3.fromRGB(0,255,255); title.Font = Enum.Font.GothamBold; title.TextSize = 14
+title.Text = "EZEK v39.0"; title.TextColor3 = Color3.fromRGB(0,255,255); title.Font = Enum.Font.GothamBold; title.TextSize = 14
 Instance.new("UICorner", title).CornerRadius = UDim.new(0,8)
 
 local dragging, dragStart, startPos
@@ -300,7 +300,7 @@ local function toggleLockManual()
         carregarAlvos()
         local t = acharAlvo()
         if not t then 
-            print("❌ Nenhum alvo na mira.")
+            print("❌ Nenhum alvo na mira. O quadrado verde apareceu em alguém?")
             return 
         end
         alvo = t; ativo = true
@@ -396,4 +396,4 @@ UIS.InputEnded:Connect(function(input)
     if input.KeyCode == Enum.KeyCode.ButtonL2 then l2 = false end
 end)
 
-print("⚡ EZEK v38.2 Carregado! | K=Lock L=ESP | Quadrado Verde Ativado.")
+print("⚡ EZEK v39.0 Carregado! | K=Lock L=ESP | Agora pega Dummy e Monstro.")
