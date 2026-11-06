@@ -1,4 +1,4 @@
--- EZEK v41.0 - ESP de Objetos apenas Interagíveis
+-- EZEK v42.0 - Inclinação Consertada (Ângulo) + ESP de Interagíveis
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UIS = game:GetService("UserInputService")
@@ -23,14 +23,11 @@ espGui.Name = "EZEK_ESP"
 local espEl = {}
 local alvosESP = {}
 
--- FUNÇÃO QUE CHECA SE É INTERAGÍVEL (Baú, Porta, Item)
 local function temInteracao(m)
     if not m or not m:IsA("Model") then return false end
-    -- Se tem prompt de interação ou click detector
     if m:FindFirstChildOfClass("ProximityPrompt") or m:FindFirstChildWhichIsA("ProximityPrompt", true) then return true end
     if m:FindFirstChildOfClass("ClickDetector") or m:FindFirstChildWhichIsA("ClickDetector", true) then return true end
     
-    -- Se o nome tem palavras chaves de itens
     local n = string.lower(m.Name)
     for _, p in ipairs({"chest","bau","item","drop","loot","coin","door","porta","portal","crate","caixa","shop","gift","key","chave","crystal","ore","minerio"}) do
         if n:find(p) then return true end
@@ -59,7 +56,6 @@ local function getTipo(m)
     if n:find("dummy") or n:find("training") then return "dummies" end
     if m:FindFirstChildOfClass("Humanoid") or temVida(m) then return "monstros" end
     
-    -- Se chegou aqui, só é objeto se for interagível
     if temInteracao(m) then return "objetos" end
     return "outros" 
 end
@@ -168,9 +164,9 @@ local function atualizarLock()
         if cabeca then miraPos = cabeca.Position end
     end
     
-    local cPos = camera.CFrame.Position
-    local nPos = Vector3.new(cPos.X, root.Position.Y + alturaCam, cPos.Z)
-    camera.CFrame = CFrame.lookAt(nPos, miraPos)
+    -- 🔥 AQUI ESTÁ A CORREÇÃO DA INCLINAÇÃO (A CÂMERA NÃO SOBE, ELA SÓ OLHA PRA CIMA)
+    miraPos = miraPos + Vector3.new(0, alturaCam, 0)
+    camera.CFrame = CFrame.lookAt(camera.CFrame.Position, miraPos)
 
     if hpBar then
         local hp, mx = getVida(alvo)
@@ -275,7 +271,7 @@ Instance.new("UICorner", main).CornerRadius = UDim.new(0,8)
 
 local title = Instance.new("TextLabel", main)
 title.Size = UDim2.new(1,0,0,35); title.BackgroundColor3 = Color3.fromRGB(15,15,20)
-title.Text = "EZEK v41.0"; title.TextColor3 = Color3.fromRGB(0,255,255); title.Font = Enum.Font.GothamBold; title.TextSize = 14
+title.Text = "EZEK v42.0"; title.TextColor3 = Color3.fromRGB(0,255,255); title.Font = Enum.Font.GothamBold; title.TextSize = 14
 Instance.new("UICorner", title).CornerRadius = UDim.new(0,8)
 
 local dragging, dragStart, startPos
@@ -410,4 +406,4 @@ UIS.InputEnded:Connect(function(input)
     if input.KeyCode == Enum.KeyCode.ButtonL2 then l2 = false end
 end)
 
-print("⚡ EZEK v41.0 Carregado! Interagíveis separados.")
+print("⚡ EZEK v42.0 Carregado! Inclinação de volta aos trilhos.")
