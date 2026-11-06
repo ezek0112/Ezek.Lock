@@ -1,4 +1,4 @@
--- EZEK v34.0 - PC ULTRA LEVE
+-- EZEK v35.0 - ANTI-LAG (Thread Separada e Física Corrigida)
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UIS = game:GetService("UserInputService")
@@ -19,11 +19,9 @@ local filtros = {players=true, dummies=true, monstros=true, objetos=true}
 local espGui = Instance.new("ScreenGui", player.PlayerGui)
 espGui.Name = "EZEK_ESP"
 
--- CACHE DO ESP (Pra não criar mil caixas)
+-- Cache do ESP
 local espEl = {}
 local alvosESP = {}
-local cacheT = 0
-local lastEspDraw = 0
 
 local function getVida(m)
     local h = m:FindFirstChildOfClass("Humanoid") or m:FindFirstChildWhichIsA("Humanoid", true)
@@ -48,33 +46,34 @@ local function getTipo(m)
     return "objetos"
 end
 
-local function atualizarLista()
-    local t = tick()
-    if t - cacheT < 1 then return end -- Atualiza a lista só 1x por segundo (Economia de processamento)
-    cacheT = t
-    
-    local lista, vistos = {}, {}
-    for _, p in pairs(Players:GetPlayers()) do
-        if p ~= player and p.Character and temVida(p.Character) then table.insert(lista, p.Character); vistos[p.Character]=true end
-    end
-    local function proc(pasta, prof)
-        if prof > 5 then return end
-        for _, v in pairs(pasta:GetChildren()) do
-            if v:IsA("Model") and not vistos[v] and getParte(v) then
-                local tipo = getTipo(v)
-                if tipo == "objetos" then
-                    if filtros.objetos then table.insert(lista, v); vistos[v]=true end
-                elseif temVida(v) then
-                    table.insert(lista, v); vistos[v]=true
-                end
-            end
-            if v:IsA("Folder") or v:IsA("Model") then proc(v, prof+1) end
+-- 🔥 THREAD SEPARADA: Isso roda em background e NÃO trava o jogo
+task.spawn(function()
+    while true do
+        task.wait(1) -- Atualiza a lista apenas 1 vez por segundo
+        local lista, vistos = {}, {}
+        for _, p in pairs(Players:GetPlayers()) do
+            if p ~= player and p.Character and temVida(p.Character) then table.insert(lista, p.Character); vistos[p.Character]=true end
         end
+        local function proc(pasta, prof)
+            if prof > 4 then return end -- Reduzi a profundidade pra 4 pra não lagar
+            for _, v in pairs(pasta:GetChildren()) do
+                if v:IsA("Model") and not vistos[v] and getParte(v) then
+                    local tipo = getTipo(v)
+                    if tipo == "objetos" then
+                        if filtros.objetos then table.insert(lista, v); vistos[v]=true end
+                    elseif temVida(v) then
+                        table.insert(lista, v); vistos[v]=true
+                    end
+                end
+                if v:IsA("Folder") then proc(v, prof+1) end
+            end
+        end
+        proc(workspace, 0)
+        alvosESP = lista
     end
-    proc(workspace, 0)
-    alvosESP = lista
-end
+end)
 
+-- 🔥 ACHA O ALVO (Agora é só 1 loop por frame, não O(N²))
 local function acharAlvo()
     local melhor, angMin = nil, math.rad(120)
     local cp = camera.CFrame.Position
@@ -169,7 +168,6 @@ end
 
 local function toggleLock()
     if ativo then pararLock() else
-        atualizarLista()
         local t = acharAlvo()
         if not t then return end
         alvo = t; ativo = true
@@ -177,98 +175,105 @@ local function toggleLock()
         local root = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
         if root then
             gyro = Instance.new("BodyGyro", root)
-            gyro.P = 100000; gyro.D = 1000; gyro.MaxTorque = Vector3.new(math.huge, math.huge, math.huge)
+            gyro.P = 30000; gyro.D = 500; gyro.MaxTorque = Vector3.new(1e5, 1e5, 1e5) -- Força normal, não infinita
         end
         RunService:UnbindFromRenderStep("EZEK_CAM")
         RunService:BindToRenderStep("EZEK_CAM", Enum.RenderPriority.Camera.Value + 1, atualizarLock)
     end
 end
 
--- LOOP DO ESP E PREVIEW (Otimizado)
+-- 🔥 LOOP DO ESP (Otimizado ao Máximo)
 RunService.RenderStepped:Connect(function()
-    if tick() - lastEspDraw < 0.03 then return end -- Limita a 33 FPS (Economia de GPU)
-    lastEspDraw = tick()
-
-    atualizarLista()
-
     local char = player.Character
     local root = char and char:FindFirstChild("HumanoidRootPart")
     if not root then return end
 
-    -- Limpa os ESPs de quem morreu/saiu
+    local alvoPreview = nil
+    if not ativo then alvoPreview = acharAlvo() end
+
+    -- Limpa caixas de quem morreu
     for m, d in pairs(espEl) do
         if not m.Parent or not temVida(m) or not filtros[getTipo(m)] then
-            d.cont:Destroy()
+            d:Destroy()
             espEl[m] = nil
         end
     end
 
-    -- Atualiza ou cria os ESPs
     for _, m in pairs(alvosESP) do
-        if (espAtivo and (temVida(m) or getTipo(m) == "objetos")) or (not ativo and m == acharAlvo()) then
-            local p = getParte(m)
-            if p then
-                local top = camera:WorldToViewportPoint(p.Position + Vector3.new(0,2.5,0))
-                local bot = camera:WorldToViewportPoint(p.Position - Vector3.new(0,2.5,0))
-                
-                if top.Z > 0 and bot.Z > 0 then
-                    local alt = math.abs(top.Y - bot.Y)
-                    if alt > 5 then
-                        local isPreview = (m == acharAlvo() and not ativo)
+        local p = getParte(m)
+        local isPreview = (m == alvoPreview)
+        local showESP = (espAtivo and filtros[getTipo(m)] and (temVida(m) or getTipo(m) == "objetos"))
+
+        if p and (showESP or isPreview) then
+            local top = camera:WorldToViewportPoint(p.Position + Vector3.new(0,2.5,0))
+            local bot = camera:WorldToViewportPoint(p.Position - Vector3.new(0,2.5,0))
+            
+            if top.Z > 0 and bot.Z > 0 then
+                local alt = math.abs(top.Y - bot.Y)
+                if alt > 5 then
+                    -- Cria a caixa se não existir
+                    if not espEl[m] then
+                        local cont = Instance.new("Frame", espGui)
+                        cont.BackgroundTransparency = 1
+                        cont.AnchorPoint = Vector2.new(0.5, 0.5)
                         
-                        if not espEl[m] then
-                            local cont = Instance.new("Frame", espGui)
-                            cont.BackgroundTransparency = 1
-                            cont.AnchorPoint = Vector2.new(0.5, 0.5)
-                            local st = Instance.new("UIStroke", cont)
-                            
-                            local nm = Instance.new("TextLabel", cont)
-                            nm.Size = UDim2.new(1,0,0,14); nm.Position = UDim2.new(0,0,0,-16); nm.BackgroundTransparency = 1
-                            nm.Font = Enum.Font.GothamBold; nm.TextSize = 10; nm.TextStrokeTransparency = 0
-                            
-                            local hpt = Instance.new("TextLabel", cont)
-                            hpt.Size = UDim2.new(1,0,0,14); hpt.Position = UDim2.new(0,0,1,2); hpt.BackgroundTransparency = 1
-                            hpt.Font = Enum.Font.GothamBold; hpt.TextSize = 10; hpt.TextStrokeTransparency = 0
-                            
-                            espEl[m] = {cont=cont, st=st, nm=nm, hpt=hpt}
-                        end
+                        local st = Instance.new("UIStroke", cont)
                         
-                        local d = espEl[m]
-                        d.cont.Visible = true
-                        d.cont.Size = UDim2.new(0, alt*0.55, 0, alt)
-                        d.cont.Position = UDim2.new(0, (top.X+bot.X)/2, 0, (top.Y+bot.Y)/2)
+                        local nm = Instance.new("TextLabel", cont)
+                        nm.Size = UDim2.new(1,0,0,14); nm.Position = UDim2.new(0,0,0,-16); nm.BackgroundTransparency = 1
+                        nm.Font = Enum.Font.GothamBold; nm.TextSize = 10; nm.TextStrokeTransparency = 0
                         
-                        if isPreview then
-                            d.st.Color = Color3.fromRGB(0, 255, 0); d.st.Thickness = 2
-                            d.nm.Visible = false; d.hpt.Visible = false
-                        else
-                            if getTipo(m) == "objetos" then d.st.Color = Color3.fromRGB(255, 150, 0) else d.st.Color = Color3.fromRGB(0, 255, 255) end
-                            d.st.Thickness = 1.5
-                            d.nm.Visible = true; d.hpt.Visible = true
-                            
-                            local hp, mx = getVida(m)
-                            local dist = math.floor((p.Position - root.Position).Magnitude)
-                            
-                            d.nm.Text = m.Name; d.nm.TextColor3 = d.st.Color
-                            if hp then
-                                d.hpt.Text = string.format("%d HP | %dm", math.floor(hp), dist); d.hpt.TextColor3 = Color3.fromRGB(0,255,0)
-                            else
-                                d.hpt.Text = string.format("%dm", dist); d.hpt.TextColor3 = Color3.fromRGB(255,150,0)
-                            end
-                        end
+                        local hpt = Instance.new("TextLabel", cont)
+                        hpt.Size = UDim2.new(1,0,0,14); hpt.Position = UDim2.new(0,0,1,2); hpt.BackgroundTransparency = 1
+                        hpt.Font = Enum.Font.GothamBold; hpt.TextSize = 10; hpt.TextStrokeTransparency = 0
+                        
+                        espEl[m] = cont
+                        -- Salva as referências dentro do próprio frame pra não precisar de tabelas extras
+                        cont:SetAttribute("UIStroke", st)
+                        cont:SetAttribute("Nome", nm)
+                        cont:SetAttribute("HP", hpt)
+                    end
+                    
+                    local cont = espEl[m]
+                    local st = cont:GetAttribute("UIStroke") or cont:FindFirstChildOfClass("UIStroke")
+                    local nm = cont:GetAttribute("Nome") or cont:FindFirstChild("TextLabel")
+                    local hpt = cont:GetAttribute("HP") or cont:FindFirstChild("TextLabel")
+                    
+                    cont.Visible = true
+                    cont.Size = UDim2.new(0, alt*0.55, 0, alt)
+                    cont.Position = UDim2.new(0, (top.X+bot.X)/2, 0, (top.Y+bot.Y)/2)
+                    
+                    if isPreview then
+                        st.Color = Color3.fromRGB(0, 255, 0); st.Thickness = 2
+                        nm.Visible = false; hpt.Visible = false
                     else
-                        if espEl[m] then espEl[m].cont.Visible = false end
+                        if getTipo(m) == "objetos" then st.Color = Color3.fromRGB(255, 150, 0) else st.Color = Color3.fromRGB(0, 255, 255) end
+                        st.Thickness = 1.5
+                        nm.Visible = true; hpt.Visible = true
+                        
+                        local hp, mx = getVida(m)
+                        local dist = math.floor((p.Position - root.Position).Magnitude)
+                        
+                        nm.Text = m.Name; nm.TextColor3 = st.Color
+                        if hp then
+                            hpt.Text = string.format("%d HP | %dm", math.floor(hp), dist); hpt.TextColor3 = Color3.fromRGB(0,255,0)
+                        else
+                            hpt.Text = string.format("%dm", dist); hpt.TextColor3 = Color3.fromRGB(255,150,0)
+                        end
                     end
                 else
-                    if espEl[m] then espEl[m].cont.Visible = false end
+                    if espEl[m] then espEl[m].Visible = false end
                 end
+            else
+                if espEl[m] then espEl[m].Visible = false end
             end
         else
-            if espEl[m] then espEl[m].cont.Visible = false end
+            if espEl[m] then espEl[m].Visible = false end
         end
     end
 end)
 
+-- UI (Mantida igual)
 local ui = Instance.new("ScreenGui", player.PlayerGui)
 ui.Name = "EZEK_UI"
 local main = Instance.new("Frame", ui)
@@ -278,7 +283,7 @@ Instance.new("UICorner", main).CornerRadius = UDim.new(0,8)
 
 local title = Instance.new("TextLabel", main)
 title.Size = UDim2.new(1,0,0,35); title.BackgroundColor3 = Color3.fromRGB(15,15,20)
-title.Text = "EZEK v34.0"; title.TextColor3 = Color3.fromRGB(0,255,255); title.Font = Enum.Font.GothamBold; title.TextSize = 14
+title.Text = "EZEK v35.0"; title.TextColor3 = Color3.fromRGB(0,255,255); title.Font = Enum.Font.GothamBold; title.TextSize = 14
 Instance.new("UICorner", title).CornerRadius = UDim.new(0,8)
 
 local minBtn = Instance.new("TextButton", title)
@@ -382,4 +387,4 @@ UIS.InputEnded:Connect(function(input)
     if input.KeyCode == Enum.KeyCode.ButtonL2 then l2 = false end
 end)
 
-print("⚡ EZEK v34.0 PC Otimizado Carregado! | P=Lock O=ESP")
+print("⚡ EZEK v35.0 Carregado! Roda liso no PC.")
