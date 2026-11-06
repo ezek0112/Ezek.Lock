@@ -1,8 +1,7 @@
--- EZEK v35.0 - ANTI-LAG (Thread Separada e Física Corrigida)
+-- EZEK v37.0 - A VERDADEIRA CORREÇÃO (Fim do Lag e UI Funcional)
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UIS = game:GetService("UserInputService")
-local CAS = game:GetService("ContextActionService")
 local player = Players.LocalPlayer
 local camera = workspace.CurrentCamera
 
@@ -12,14 +11,14 @@ end
 pcall(function() RunService:UnbindFromRenderStep("EZEK_CAM") end)
 
 local ativo, espAtivo = false, false
-local alvo, gyro, hpBar = nil, nil, nil
+local alvo, hpBar = nil, nil
+local align, attach = nil, nil
 local miraPeito = false
 local alturaCam = 2.0
 local filtros = {players=true, dummies=true, monstros=true, objetos=true}
 local espGui = Instance.new("ScreenGui", player.PlayerGui)
 espGui.Name = "EZEK_ESP"
 
--- Cache do ESP
 local espEl = {}
 local alvosESP = {}
 
@@ -46,16 +45,16 @@ local function getTipo(m)
     return "objetos"
 end
 
--- 🔥 THREAD SEPARADA: Isso roda em background e NÃO trava o jogo
+-- Cache da lista (roda em background)
 task.spawn(function()
     while true do
-        task.wait(1) -- Atualiza a lista apenas 1 vez por segundo
+        task.wait(1)
         local lista, vistos = {}, {}
         for _, p in pairs(Players:GetPlayers()) do
             if p ~= player and p.Character and temVida(p.Character) then table.insert(lista, p.Character); vistos[p.Character]=true end
         end
         local function proc(pasta, prof)
-            if prof > 4 then return end -- Reduzi a profundidade pra 4 pra não lagar
+            if prof > 4 then return end
             for _, v in pairs(pasta:GetChildren()) do
                 if v:IsA("Model") and not vistos[v] and getParte(v) then
                     local tipo = getTipo(v)
@@ -73,7 +72,6 @@ task.spawn(function()
     end
 end)
 
--- 🔥 ACHA O ALVO (Agora é só 1 loop por frame, não O(N²))
 local function acharAlvo()
     local melhor, angMin = nil, math.rad(120)
     local cp = camera.CFrame.Position
@@ -99,7 +97,8 @@ local function pararLock()
     if not ativo then return end
     ativo = false; alvo = nil
     RunService:UnbindFromRenderStep("EZEK_CAM")
-    if gyro then gyro:Destroy(); gyro = nil end
+    if align then align:Destroy(); align = nil end
+    if attach then attach:Destroy(); attach = nil end
     if hpBar then hpBar:Destroy(); hpBar = nil end
     local h = player.Character and player.Character:FindFirstChildOfClass("Humanoid")
     if h then h.AutoRotate = true end
@@ -132,9 +131,9 @@ local function atualizarLock()
     local p = getParte(alvo)
     if not root or not h or not p then pararLock() return end
 
-    if gyro then
+    if align then
         local tPos = Vector3.new(p.Position.X, root.Position.Y, p.Position.Z)
-        gyro.CFrame = CFrame.lookAt(root.Position, tPos)
+        align.CFrame = CFrame.lookAt(root.Position, tPos)
     end
     
     h.AutoRotate = false
@@ -169,21 +168,38 @@ end
 local function toggleLock()
     if ativo then pararLock() else
         local t = acharAlvo()
-        if not t then return end
+        if not t then 
+            print("❌ Nenhum alvo encontrado!")
+            return 
+        end
         alvo = t; ativo = true
         criarHPBar(t)
         local root = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
         if root then
-            gyro = Instance.new("BodyGyro", root)
-            gyro.P = 30000; gyro.D = 500; gyro.MaxTorque = Vector3.new(1e5, 1e5, 1e5) -- Força normal, não infinita
+            attach = Instance.new("Attachment", root)
+            align = Instance.new("AlignOrientation", root)
+            align.Mode = Enum.OrientationAlignmentMode.OneAttachment
+            align.Attachment0 = attach
+            align.RigidityEnabled = true
+            align.MaxTorque = 100000
+            align.Responsiveness = 200
         end
         RunService:UnbindFromRenderStep("EZEK_CAM")
         RunService:BindToRenderStep("EZEK_CAM", Enum.RenderPriority.Camera.Value + 1, atualizarLock)
     end
 end
 
--- 🔥 LOOP DO ESP (Otimizado ao Máximo)
-RunService.RenderStepped:Connect(function()
+-- 🔥 ESP LOOP OTIMIZADO (Roda a 20 FPS em vez de 60, economiza 70% de CPU)
+local lastEspTick = 0
+RunService.Heartbeat:Connect(function()
+    if not espAtivo and not ativo then 
+        for _, d in pairs(espEl) do d.cont.Visible = false end
+        return 
+    end
+
+    if tick() - lastEspTick < 0.05 then return end
+    lastEspTick = tick()
+
     local char = player.Character
     local root = char and char:FindFirstChild("HumanoidRootPart")
     if not root then return end
@@ -191,10 +207,9 @@ RunService.RenderStepped:Connect(function()
     local alvoPreview = nil
     if not ativo then alvoPreview = acharAlvo() end
 
-    -- Limpa caixas de quem morreu
     for m, d in pairs(espEl) do
         if not m.Parent or not temVida(m) or not filtros[getTipo(m)] then
-            d:Destroy()
+            d.cont:Destroy()
             espEl[m] = nil
         end
     end
@@ -211,69 +226,58 @@ RunService.RenderStepped:Connect(function()
             if top.Z > 0 and bot.Z > 0 then
                 local alt = math.abs(top.Y - bot.Y)
                 if alt > 5 then
-                    -- Cria a caixa se não existir
                     if not espEl[m] then
                         local cont = Instance.new("Frame", espGui)
                         cont.BackgroundTransparency = 1
                         cont.AnchorPoint = Vector2.new(0.5, 0.5)
-                        
                         local st = Instance.new("UIStroke", cont)
-                        
                         local nm = Instance.new("TextLabel", cont)
                         nm.Size = UDim2.new(1,0,0,14); nm.Position = UDim2.new(0,0,0,-16); nm.BackgroundTransparency = 1
                         nm.Font = Enum.Font.GothamBold; nm.TextSize = 10; nm.TextStrokeTransparency = 0
-                        
                         local hpt = Instance.new("TextLabel", cont)
                         hpt.Size = UDim2.new(1,0,0,14); hpt.Position = UDim2.new(0,0,1,2); hpt.BackgroundTransparency = 1
                         hpt.Font = Enum.Font.GothamBold; hpt.TextSize = 10; hpt.TextStrokeTransparency = 0
                         
-                        espEl[m] = cont
-                        -- Salva as referências dentro do próprio frame pra não precisar de tabelas extras
-                        cont:SetAttribute("UIStroke", st)
-                        cont:SetAttribute("Nome", nm)
-                        cont:SetAttribute("HP", hpt)
+                        -- 🔥 SALVA EM TABELA (Sem erro de Attribute)
+                        espEl[m] = {cont=cont, st=st, nm=nm, hpt=hpt}
                     end
                     
-                    local cont = espEl[m]
-                    local st = cont:GetAttribute("UIStroke") or cont:FindFirstChildOfClass("UIStroke")
-                    local nm = cont:GetAttribute("Nome") or cont:FindFirstChild("TextLabel")
-                    local hpt = cont:GetAttribute("HP") or cont:FindFirstChild("TextLabel")
-                    
-                    cont.Visible = true
-                    cont.Size = UDim2.new(0, alt*0.55, 0, alt)
-                    cont.Position = UDim2.new(0, (top.X+bot.X)/2, 0, (top.Y+bot.Y)/2)
+                    local d = espEl[m]
+                    d.cont.Visible = true
+                    d.cont.Size = UDim2.new(0, alt*0.55, 0, alt)
+                    d.cont.Position = UDim2.new(0, (top.X+bot.X)/2, 0, (top.Y+bot.Y)/2)
                     
                     if isPreview then
-                        st.Color = Color3.fromRGB(0, 255, 0); st.Thickness = 2
-                        nm.Visible = false; hpt.Visible = false
+                        d.st.Color = Color3.fromRGB(0, 255, 0); d.st.Thickness = 2
+                        d.nm.Visible = false; d.hpt.Visible = false
                     else
-                        if getTipo(m) == "objetos" then st.Color = Color3.fromRGB(255, 150, 0) else st.Color = Color3.fromRGB(0, 255, 255) end
-                        st.Thickness = 1.5
-                        nm.Visible = true; hpt.Visible = true
+                        if getTipo(m) == "objetos" then d.st.Color = Color3.fromRGB(255, 150, 0) else d.st.Color = Color3.fromRGB(0, 255, 255) end
+                        d.st.Thickness = 1.5
+                        d.nm.Visible = true; d.hpt.Visible = true
                         
                         local hp, mx = getVida(m)
                         local dist = math.floor((p.Position - root.Position).Magnitude)
                         
-                        nm.Text = m.Name; nm.TextColor3 = st.Color
+                        d.nm.Text = m.Name; d.nm.TextColor3 = d.st.Color
                         if hp then
-                            hpt.Text = string.format("%d HP | %dm", math.floor(hp), dist); hpt.TextColor3 = Color3.fromRGB(0,255,0)
+                            d.hpt.Text = string.format("%d HP | %dm", math.floor(hp), dist); d.hpt.TextColor3 = Color3.fromRGB(0,255,0)
                         else
-                            hpt.Text = string.format("%dm", dist); hpt.TextColor3 = Color3.fromRGB(255,150,0)
+                            d.hpt.Text = string.format("%dm", dist); d.hpt.TextColor3 = Color3.fromRGB(255,150,0)
                         end
                     end
                 else
-                    if espEl[m] then espEl[m].Visible = false end
+                    if espEl[m] then espEl[m].cont.Visible = false end
                 end
             else
-                if espEl[m] then espEl[m].Visible = false end
+                if espEl[m] then espEl[m].cont.Visible = false end
             end
         else
-            if espEl[m] then espEl[m].Visible = false end
+            if espEl[m] then espEl[m].cont.Visible = false end
         end
     end
 end)
 
--- UI (Mantida igual)
+-- UI
 local ui = Instance.new("ScreenGui", player.PlayerGui)
 ui.Name = "EZEK_UI"
 local main = Instance.new("Frame", ui)
@@ -283,8 +287,14 @@ Instance.new("UICorner", main).CornerRadius = UDim.new(0,8)
 
 local title = Instance.new("TextLabel", main)
 title.Size = UDim2.new(1,0,0,35); title.BackgroundColor3 = Color3.fromRGB(15,15,20)
-title.Text = "EZEK v35.0"; title.TextColor3 = Color3.fromRGB(0,255,255); title.Font = Enum.Font.GothamBold; title.TextSize = 14
+title.Text = "EZEK v37.0"; title.TextColor3 = Color3.fromRGB(0,255,255); title.Font = Enum.Font.GothamBold; title.TextSize = 14
 Instance.new("UICorner", title).CornerRadius = UDim.new(0,8)
+
+-- 🔥 DRAG DO MENU DE VOLTA
+local dragging, dragStart, startPos
+title.InputBegan:Connect(function(i) if i.UserInputType == Enum.UserInputType.MouseButton1 or i.UserInputType == Enum.UserInputType.Touch then dragging = true; dragStart = i.Position; startPos = main.Position end end)
+UIS.InputChanged:Connect(function(i) if dragging and (i.UserInputType == Enum.UserInputType.MouseMovement or i.UserInputType == Enum.UserInputType.Touch) then local d = i.Position - dragStart; main.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + d.X, startPos.Y.Scale, startPos.Y.Offset + d.Y) end end)
+UIS.InputEnded:Connect(function(i) if i.UserInputType == Enum.UserInputType.MouseButton1 or i.UserInputType == Enum.UserInputType.Touch then dragging = false end end)
 
 local minBtn = Instance.new("TextButton", title)
 minBtn.Size = UDim2.new(0,30,1,0); minBtn.Position = UDim2.new(1,-30,0,0); minBtn.BackgroundColor3 = Color3.fromRGB(200,50,50)
@@ -298,11 +308,6 @@ floatBtn.Visible = false; Instance.new("UICorner", floatBtn).CornerRadius = UDim
 minBtn.MouseButton1Click:Connect(function() main.Visible = false; floatBtn.Visible = true end)
 floatBtn.MouseButton1Click:Connect(function() main.Visible = true; floatBtn.Visible = false end)
 
-local dragging, dragStart, startPos
-title.InputBegan:Connect(function(i) if i.UserInputType == Enum.UserInputType.MouseButton1 or i.UserInputType == Enum.UserInputType.Touch then dragging = true; dragStart = i.Position; startPos = main.Position end end)
-UIS.InputChanged:Connect(function(i) if dragging and (i.UserInputType == Enum.UserInputType.MouseMovement or i.UserInputType == Enum.UserInputType.Touch) then local d = i.Position - dragStart; main.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + d.X, startPos.Y.Scale, startPos.Y.Offset + d.Y) end end)
-UIS.InputEnded:Connect(function(i) if i.UserInputType == Enum.UserInputType.MouseButton1 or i.UserInputType == Enum.UserInputType.Touch then dragging = false end end)
-
 local function mkBtn(txt, y, cb)
     local b = Instance.new("TextButton", main)
     b.Size = UDim2.new(1,-20,0,32); b.Position = UDim2.new(0,10,0,y)
@@ -314,8 +319,13 @@ end
 
 local bLock = mkBtn("LOCK: OFF", 45, function()
     toggleLock()
-    bLock.Text = ativo and "LOCK: ON" or "LOCK: OFF"
-    bLock.BackgroundColor3 = ativo and Color3.fromRGB(0,150,0) or Color3.fromRGB(40,40,50)
+    if ativo then
+        bLock.Text = "LOCK: ON"
+        bLock.BackgroundColor3 = Color3.fromRGB(0,150,0)
+    else
+        bLock.Text = "LOCK: OFF"
+        bLock.BackgroundColor3 = Color3.fromRGB(40,40,50)
+    end
 end)
 
 local bEsp = mkBtn("ESP: OFF", 82, function()
@@ -365,10 +375,14 @@ mkChk("Dummies", "dummies", 245)
 mkChk("Monstros", "monstros", 270)
 mkChk("Objetos", "objetos", 295)
 
--- BINDS DO PC
-CAS:BindAction("EzekLock", function(_, state) if state == Enum.UserInputState.Begin then bLock:Activate() end end, false, Enum.KeyCode.P)
-CAS:BindAction("EzekEsp", function(_, state) if state == Enum.UserInputState.Begin then bEsp:Activate() end end, false, Enum.KeyCode.O)
+-- Controles Teclado
+UIS.InputBegan:Connect(function(input, gp)
+    if gp then return end
+    if input.KeyCode == Enum.KeyCode.P then bLock:Activate() end
+    if input.KeyCode == Enum.KeyCode.O then bEsp:Activate() end
+end)
 
+-- Controles Controle
 local r1,r2,l1,l2 = false,false,false,false
 UIS.InputBegan:Connect(function(input, gp)
     if input.KeyCode == Enum.KeyCode.ButtonR1 then r1 = true end
@@ -387,4 +401,4 @@ UIS.InputEnded:Connect(function(input)
     if input.KeyCode == Enum.KeyCode.ButtonL2 then l2 = false end
 end)
 
-print("⚡ EZEK v35.0 Carregado! Roda liso no PC.")
+print("⚡ EZEK v37.0 Carregado! O botão agora funciona e o lag foi embora.")
