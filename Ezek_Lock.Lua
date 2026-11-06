@@ -1,7 +1,8 @@
--- EZEK v37.0 - A VERDADEIRA CORREÇÃO (Fim do Lag e UI Funcional)
+-- EZEK v38.2 - Quadrado Verde Consertado
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UIS = game:GetService("UserInputService")
+local CAS = game:GetService("ContextActionService")
 local player = Players.LocalPlayer
 local camera = workspace.CurrentCamera
 
@@ -45,30 +46,34 @@ local function getTipo(m)
     return "objetos"
 end
 
--- Cache da lista (roda em background)
+local function carregarAlvos()
+    local lista, vistos = {}, {}
+    for _, p in pairs(Players:GetPlayers()) do
+        if p ~= player and p.Character and temVida(p.Character) then table.insert(lista, p.Character); vistos[p.Character]=true end
+    end
+    local function proc(pasta, prof)
+        if prof > 4 then return end
+        for _, v in pairs(pasta:GetChildren()) do
+            if v:IsA("Model") and not vistos[v] and getParte(v) then
+                local tipo = getTipo(v)
+                if tipo == "objetos" then
+                    if filtros.objetos then table.insert(lista, v); vistos[v]=true end
+                elseif temVida(v) then
+                    table.insert(lista, v); vistos[v]=true
+                end
+            end
+            if v:IsA("Folder") then proc(v, prof+1) end
+        end
+    end
+    proc(workspace, 0)
+    alvosESP = lista
+end
+carregarAlvos()
+
 task.spawn(function()
     while true do
         task.wait(1)
-        local lista, vistos = {}, {}
-        for _, p in pairs(Players:GetPlayers()) do
-            if p ~= player and p.Character and temVida(p.Character) then table.insert(lista, p.Character); vistos[p.Character]=true end
-        end
-        local function proc(pasta, prof)
-            if prof > 4 then return end
-            for _, v in pairs(pasta:GetChildren()) do
-                if v:IsA("Model") and not vistos[v] and getParte(v) then
-                    local tipo = getTipo(v)
-                    if tipo == "objetos" then
-                        if filtros.objetos then table.insert(lista, v); vistos[v]=true end
-                    elseif temVida(v) then
-                        table.insert(lista, v); vistos[v]=true
-                    end
-                end
-                if v:IsA("Folder") then proc(v, prof+1) end
-            end
-        end
-        proc(workspace, 0)
-        alvosESP = lista
+        carregarAlvos()
     end
 end)
 
@@ -82,7 +87,7 @@ local function acharAlvo()
                 local p = getParte(m)
                 if p then
                     local dist = (p.Position - cp).Magnitude
-                    if dist > 4 then
+                    if dist > 1 then
                         local ang = math.acos(math.clamp(cl:Dot((p.Position - cp).Unit), -1, 1))
                         if ang < angMin then angMin = ang; melhor = m end
                     end
@@ -165,38 +170,8 @@ local function atualizarLock()
     end
 end
 
-local function toggleLock()
-    if ativo then pararLock() else
-        local t = acharAlvo()
-        if not t then 
-            print("❌ Nenhum alvo encontrado!")
-            return 
-        end
-        alvo = t; ativo = true
-        criarHPBar(t)
-        local root = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
-        if root then
-            attach = Instance.new("Attachment", root)
-            align = Instance.new("AlignOrientation", root)
-            align.Mode = Enum.OrientationAlignmentMode.OneAttachment
-            align.Attachment0 = attach
-            align.RigidityEnabled = true
-            align.MaxTorque = 100000
-            align.Responsiveness = 200
-        end
-        RunService:UnbindFromRenderStep("EZEK_CAM")
-        RunService:BindToRenderStep("EZEK_CAM", Enum.RenderPriority.Camera.Value + 1, atualizarLock)
-    end
-end
-
--- 🔥 ESP LOOP OTIMIZADO (Roda a 20 FPS em vez de 60, economiza 70% de CPU)
 local lastEspTick = 0
 RunService.Heartbeat:Connect(function()
-    if not espAtivo and not ativo then 
-        for _, d in pairs(espEl) do d.cont.Visible = false end
-        return 
-    end
-
     if tick() - lastEspTick < 0.05 then return end
     lastEspTick = tick()
 
@@ -204,6 +179,7 @@ RunService.Heartbeat:Connect(function()
     local root = char and char:FindFirstChild("HumanoidRootPart")
     if not root then return end
 
+    -- 🔥 SEM TRAVA DE RETORNO. O quadrado verde funciona independente do ESP/Lock.
     local alvoPreview = nil
     if not ativo then alvoPreview = acharAlvo() end
 
@@ -238,7 +214,6 @@ RunService.Heartbeat:Connect(function()
                         hpt.Size = UDim2.new(1,0,0,14); hpt.Position = UDim2.new(0,0,1,2); hpt.BackgroundTransparency = 1
                         hpt.Font = Enum.Font.GothamBold; hpt.TextSize = 10; hpt.TextStrokeTransparency = 0
                         
-                        -- 🔥 SALVA EM TABELA (Sem erro de Attribute)
                         espEl[m] = {cont=cont, st=st, nm=nm, hpt=hpt}
                     end
                     
@@ -277,20 +252,19 @@ RunService.Heartbeat:Connect(function()
     end
 end)
 
--- UI
 local ui = Instance.new("ScreenGui", player.PlayerGui)
 ui.Name = "EZEK_UI"
 local main = Instance.new("Frame", ui)
 main.Size = UDim2.new(0, 170, 0, 350); main.Position = UDim2.new(0, 20, 0.5, -175)
 main.BackgroundColor3 = Color3.fromRGB(20,20,25); main.BorderSizePixel = 0
+main.Active = true
 Instance.new("UICorner", main).CornerRadius = UDim.new(0,8)
 
 local title = Instance.new("TextLabel", main)
 title.Size = UDim2.new(1,0,0,35); title.BackgroundColor3 = Color3.fromRGB(15,15,20)
-title.Text = "EZEK v37.0"; title.TextColor3 = Color3.fromRGB(0,255,255); title.Font = Enum.Font.GothamBold; title.TextSize = 14
+title.Text = "EZEK v38.2"; title.TextColor3 = Color3.fromRGB(0,255,255); title.Font = Enum.Font.GothamBold; title.TextSize = 14
 Instance.new("UICorner", title).CornerRadius = UDim.new(0,8)
 
--- 🔥 DRAG DO MENU DE VOLTA
 local dragging, dragStart, startPos
 title.InputBegan:Connect(function(i) if i.UserInputType == Enum.UserInputType.MouseButton1 or i.UserInputType == Enum.UserInputType.Touch then dragging = true; dragStart = i.Position; startPos = main.Position end end)
 UIS.InputChanged:Connect(function(i) if dragging and (i.UserInputType == Enum.UserInputType.MouseMovement or i.UserInputType == Enum.UserInputType.Touch) then local d = i.Position - dragStart; main.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + d.X, startPos.Y.Scale, startPos.Y.Offset + d.Y) end end)
@@ -317,22 +291,48 @@ local function mkBtn(txt, y, cb)
     return b
 end
 
-local bLock = mkBtn("LOCK: OFF", 45, function()
-    toggleLock()
+local function toggleLockManual()
     if ativo then
-        bLock.Text = "LOCK: ON"
-        bLock.BackgroundColor3 = Color3.fromRGB(0,150,0)
-    else
-        bLock.Text = "LOCK: OFF"
+        pararLock()
+        bLock.Text = "LOCK [K]: OFF"
         bLock.BackgroundColor3 = Color3.fromRGB(40,40,50)
+    else
+        carregarAlvos()
+        local t = acharAlvo()
+        if not t then 
+            print("❌ Nenhum alvo na mira.")
+            return 
+        end
+        alvo = t; ativo = true
+        criarHPBar(t)
+        local root = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+        if root then
+            if attach then attach:Destroy() end
+            if align then align:Destroy() end
+            attach = Instance.new("Attachment", root)
+            align = Instance.new("AlignOrientation", root)
+            align.Mode = Enum.OrientationAlignmentMode.OneAttachment
+            align.Attachment0 = attach
+            align.RigidityEnabled = true
+            align.MaxTorque = 100000
+            align.Responsiveness = 200
+        end
+        RunService:UnbindFromRenderStep("EZEK_CAM")
+        RunService:BindToRenderStep("EZEK_CAM", Enum.RenderPriority.Camera.Value + 1, atualizarLock)
+        
+        bLock.Text = "LOCK [K]: ON"
+        bLock.BackgroundColor3 = Color3.fromRGB(0,150,0)
     end
-end)
+end
 
-local bEsp = mkBtn("ESP: OFF", 82, function()
+local function toggleEspManual()
     espAtivo = not espAtivo
-    bEsp.Text = espAtivo and "ESP: ON" or "ESP: OFF"
+    bEsp.Text = espAtivo and "ESP [L]: ON" or "ESP [L]: OFF"
     bEsp.BackgroundColor3 = espAtivo and Color3.fromRGB(0,150,0) or Color3.fromRGB(40,40,50)
-end)
+end
+
+local bLock = mkBtn("LOCK [K]: OFF", 45, toggleLockManual)
+local bEsp = mkBtn("ESP [L]: OFF", 82, toggleEspManual)
 
 local bMira = mkBtn("MIRA: CABEÇA", 119, function()
     miraPeito = not miraPeito
@@ -375,14 +375,9 @@ mkChk("Dummies", "dummies", 245)
 mkChk("Monstros", "monstros", 270)
 mkChk("Objetos", "objetos", 295)
 
--- Controles Teclado
-UIS.InputBegan:Connect(function(input, gp)
-    if gp then return end
-    if input.KeyCode == Enum.KeyCode.P then bLock:Activate() end
-    if input.KeyCode == Enum.KeyCode.O then bEsp:Activate() end
-end)
+CAS:BindAction("EzekLock", function(_, state) if state == Enum.UserInputState.Begin then toggleLockManual() end end, false, Enum.KeyCode.K)
+CAS:BindAction("EzekEsp", function(_, state) if state == Enum.UserInputState.Begin then toggleEspManual() end end, false, Enum.KeyCode.L)
 
--- Controles Controle
 local r1,r2,l1,l2 = false,false,false,false
 UIS.InputBegan:Connect(function(input, gp)
     if input.KeyCode == Enum.KeyCode.ButtonR1 then r1 = true end
@@ -390,8 +385,8 @@ UIS.InputBegan:Connect(function(input, gp)
     if input.KeyCode == Enum.KeyCode.ButtonL1 then l1 = true end
     if input.KeyCode == Enum.KeyCode.ButtonL2 then l2 = true end
     
-    if r1 and r2 then bLock:Activate(); r1=false; r2=false end
-    if l1 and l2 then bEsp:Activate(); l1=false; l2=false end
+    if r1 and r2 then toggleLockManual(); r1=false; r2=false end
+    if l1 and l2 then toggleEspManual(); l1=false; l2=false end
 end)
 
 UIS.InputEnded:Connect(function(input)
@@ -401,4 +396,4 @@ UIS.InputEnded:Connect(function(input)
     if input.KeyCode == Enum.KeyCode.ButtonL2 then l2 = false end
 end)
 
-print("⚡ EZEK v37.0 Carregado! O botão agora funciona e o lag foi embora.")
+print("⚡ EZEK v38.2 Carregado! | K=Lock L=ESP | Quadrado Verde Ativado.")
