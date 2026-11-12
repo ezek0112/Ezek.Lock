@@ -1,4 +1,4 @@
--- EZEK v42.0 - Inclinação Consertada (Ângulo) + ESP de Interagíveis
+-- EZEK v43.0 - Fim do Lag (Sistema de Eventos)
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UIS = game:GetService("UserInputService")
@@ -20,20 +20,8 @@ local filtros = {players=true, dummies=true, monstros=true, objetos=true}
 local espGui = Instance.new("ScreenGui", player.PlayerGui)
 espGui.Name = "EZEK_ESP"
 
+local alvosESP = {} 
 local espEl = {}
-local alvosESP = {}
-
-local function temInteracao(m)
-    if not m or not m:IsA("Model") then return false end
-    if m:FindFirstChildOfClass("ProximityPrompt") or m:FindFirstChildWhichIsA("ProximityPrompt", true) then return true end
-    if m:FindFirstChildOfClass("ClickDetector") or m:FindFirstChildWhichIsA("ClickDetector", true) then return true end
-    
-    local n = string.lower(m.Name)
-    for _, p in ipairs({"chest","bau","item","drop","loot","coin","door","porta","portal","crate","caixa","shop","gift","key","chave","crystal","ore","minerio"}) do
-        if n:find(p) then return true end
-    end
-    return false
-end
 
 local function getVida(m)
     local h = m:FindFirstChildOfClass("Humanoid") or m:FindFirstChildWhichIsA("Humanoid", true)
@@ -50,6 +38,18 @@ local function getParte(m)
     return m:FindFirstChild("Head") or m:FindFirstChild("HumanoidRootPart") or m:FindFirstChildWhichIsA("BasePart")
 end
 
+local function temInteracao(m)
+    if not m or not m:IsA("Model") then return false end
+    if m:FindFirstChildOfClass("ProximityPrompt") or m:FindFirstChildWhichIsA("ProximityPrompt", true) then return true end
+    if m:FindFirstChildOfClass("ClickDetector") or m:FindFirstChildWhichIsA("ClickDetector", true) then return true end
+    
+    local n = string.lower(m.Name)
+    for _, p in ipairs({"chest","bau","item","drop","loot","coin","door","porta","portal","crate","caixa","shop","gift","key","chave","crystal","ore","minerio"}) do
+        if n:find(p) then return true end
+    end
+    return false
+end
+
 local function getTipo(m)
     if Players:GetPlayerFromCharacter(m) then return "players" end
     local n = string.lower(m.Name)
@@ -60,52 +60,55 @@ local function getTipo(m)
     return "outros" 
 end
 
-local function carregarAlvos()
-    local lista, vistos = {}, {}
-    for _, p in pairs(Players:GetPlayers()) do
-        if p ~= player and p.Character and temVida(p.Character) then table.insert(lista, p.Character); vistos[p.Character]=true end
-    end
-    local function proc(pasta, prof)
-        if prof > 6 then return end
-        for _, v in pairs(pasta:GetChildren()) do
-            if v:IsA("Model") and not vistos[v] and getParte(v) then
-                local tipo = getTipo(v)
-                
-                if tipo == "objetos" then
-                    if filtros.objetos then table.insert(lista, v); vistos[v]=true end
-                elseif (tipo == "players" and filtros.players) or (tipo == "dummies" and filtros.dummies) or (tipo == "monstros" and filtros.monstros) then
-                    if temVida(v) then table.insert(lista, v); vistos[v]=true end
-                end
-            end
-            if v:IsA("Folder") or v:IsA("Model") then proc(v, prof+1) end
+-- 🔥 SISTEMA DE ADICIONAR ALVO (Só adiciona o que interessa)
+local function adicionarAlvo(v)
+    if not v:IsA("Model") or v == player.Character then return end
+    if not getParte(v) then return end
+    local tipo = getTipo(v)
+    if tipo == "outros" then return end
+    
+    if filtros[tipo] then
+        if not table.find(alvosESP, v) then
+            table.insert(alvosESP, v)
         end
     end
-    proc(workspace, 0)
-    alvosESP = lista
 end
-carregarAlvos()
 
-task.spawn(function()
-    while true do
-        task.wait(1)
-        carregarAlvos()
-    end
+-- Popula a lista inicial (só uma vez, rápido)
+for _, v in ipairs(workspace:GetChildren()) do adicionarAlvo(v) end
+
+-- Escuta novos alvos surgindo sem travar o jogo
+workspace.ChildAdded:Connect(function(v)
+    task.wait(0.5) -- espera carregar
+    adicionarAlvo(v)
 end)
+
+-- Loop de limpeza (roda no Heartbeat, é super leve)
+local function limparAlvos()
+    for i = #alvosESP, 1, -1 do
+        local m = alvosESP[i]
+        if not m.Parent or (not temVida(m) and getTipo(m) ~= "objetos") or not filtros[getTipo(m)] then
+            table.remove(alvosESP, i)
+            if espEl[m] then
+                espEl[m].cont:Destroy()
+                espEl[m] = nil
+            end
+        end
+    end
+end
 
 local function acharAlvo()
     local melhor, angMin = nil, math.rad(120)
     local cp = camera.CFrame.Position
     local cl = camera.CFrame.LookVector
     for _, m in pairs(alvosESP) do
-        if m ~= player.Character and not m:IsDescendantOf(player.Character) then
-            if filtros[getTipo(m)] and (temVida(m) or getTipo(m) == "objetos") then
-                local p = getParte(m)
-                if p then
-                    local dist = (p.Position - cp).Magnitude
-                    if dist > 0.5 then
-                        local ang = math.acos(math.clamp(cl:Dot((p.Position - cp).Unit), -1, 1))
-                        if ang < angMin then angMin = ang; melhor = m end
-                    end
+        if m ~= player.Character then
+            local p = getParte(m)
+            if p and (temVida(m) or getTipo(m) == "objetos") then
+                local dist = (p.Position - cp).Magnitude
+                if dist > 0.5 then
+                    local ang = math.acos(math.clamp(cl:Dot((p.Position - cp).Unit), -1, 1))
+                    if ang < angMin then angMin = ang; melhor = m end
                 end
             end
         end
@@ -164,7 +167,6 @@ local function atualizarLock()
         if cabeca then miraPos = cabeca.Position end
     end
     
-    -- 🔥 AQUI ESTÁ A CORREÇÃO DA INCLINAÇÃO (A CÂMERA NÃO SOBE, ELA SÓ OLHA PRA CIMA)
     miraPos = miraPos + Vector3.new(0, alturaCam, 0)
     camera.CFrame = CFrame.lookAt(camera.CFrame.Position, miraPos)
 
@@ -185,19 +187,14 @@ RunService.Heartbeat:Connect(function()
     if tick() - lastEspTick < 0.05 then return end
     lastEspTick = tick()
 
+    limparAlvos()
+
     local char = player.Character
     local root = char and char:FindFirstChild("HumanoidRootPart")
     if not root then return end
 
     local alvoPreview = nil
     if not ativo then alvoPreview = acharAlvo() end
-
-    for m, d in pairs(espEl) do
-        if not m.Parent or (not temVida(m) and getTipo(m) ~= "objetos") then
-            d.cont:Destroy()
-            espEl[m] = nil
-        end
-    end
 
     for _, m in pairs(alvosESP) do
         local p = getParte(m)
@@ -271,7 +268,7 @@ Instance.new("UICorner", main).CornerRadius = UDim.new(0,8)
 
 local title = Instance.new("TextLabel", main)
 title.Size = UDim2.new(1,0,0,35); title.BackgroundColor3 = Color3.fromRGB(15,15,20)
-title.Text = "EZEK v42.0"; title.TextColor3 = Color3.fromRGB(0,255,255); title.Font = Enum.Font.GothamBold; title.TextSize = 14
+title.Text = "EZEK v43.0"; title.TextColor3 = Color3.fromRGB(0,255,255); title.Font = Enum.Font.GothamBold; title.TextSize = 14
 Instance.new("UICorner", title).CornerRadius = UDim.new(0,8)
 
 local dragging, dragStart, startPos
@@ -306,7 +303,6 @@ local function toggleLockManual()
         bLock.Text = "LOCK [K]: OFF"
         bLock.BackgroundColor3 = Color3.fromRGB(40,40,50)
     else
-        carregarAlvos()
         local t = acharAlvo()
         if not t then 
             print("❌ Nenhum alvo na mira.")
@@ -349,12 +345,12 @@ local bMira = mkBtn("MIRA: CABEÇA", 119, function()
     bMira.BackgroundColor3 = miraPeito and Color3.fromRGB(180,50,50) or Color3.fromRGB(40,40,50)
 end)
 
-local bCam = mkBtn("CÂMERA ACIMA: 2.0", 156, function()
+local bCam = mkBtn("INCLINAÇÃO: 2.0", 156, function()
     if alturaCam == 2.0 then alturaCam = 4.0
     elseif alturaCam == 4.0 then alturaCam = 6.0
     elseif alturaCam == 6.0 then alturaCam = 8.0
     else alturaCam = 2.0 end
-    bCam.Text = "CÂMERA ACIMA: " .. tostring(alturaCam)
+    bCam.Text = "INCLINAÇÃO: " .. tostring(alturaCam)
 end)
 
 local fTitle = Instance.new("TextLabel", main)
@@ -376,7 +372,6 @@ local function mkChk(txt, chave, y)
         filtros[chave] = not filtros[chave]
         btn.BackgroundColor3 = filtros[chave] and Color3.fromRGB(0,150,0) or Color3.fromRGB(60,60,75)
         btn.Text = filtros[chave] and "✓" or ""
-        carregarAlvos()
     end end)
 end
 
@@ -406,4 +401,4 @@ UIS.InputEnded:Connect(function(input)
     if input.KeyCode == Enum.KeyCode.ButtonL2 then l2 = false end
 end)
 
-print("⚡ EZEK v42.0 Carregado! Inclinação de volta aos trilhos.")
+print("⚡ EZEK v43.0 Carregado! Fim do lag.")
