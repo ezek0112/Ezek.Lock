@@ -1,4 +1,4 @@
--- EZEK v43.0 - Fim do Lag (Sistema de Eventos)
+-- EZEK v43.1 - Apenas correção da UI
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UIS = game:GetService("UserInputService")
@@ -60,7 +60,6 @@ local function getTipo(m)
     return "outros" 
 end
 
--- 🔥 SISTEMA DE ADICIONAR ALVO (Só adiciona o que interessa)
 local function adicionarAlvo(v)
     if not v:IsA("Model") or v == player.Character then return end
     if not getParte(v) then return end
@@ -74,16 +73,13 @@ local function adicionarAlvo(v)
     end
 end
 
--- Popula a lista inicial (só uma vez, rápido)
 for _, v in ipairs(workspace:GetChildren()) do adicionarAlvo(v) end
 
--- Escuta novos alvos surgindo sem travar o jogo
 workspace.ChildAdded:Connect(function(v)
-    task.wait(0.5) -- espera carregar
+    task.wait(0.5)
     adicionarAlvo(v)
 end)
 
--- Loop de limpeza (roda no Heartbeat, é super leve)
 local function limparAlvos()
     for i = #alvosESP, 1, -1 do
         local m = alvosESP[i]
@@ -258,6 +254,7 @@ RunService.Heartbeat:Connect(function()
     end
 end)
 
+-- ===================== UI =====================
 local ui = Instance.new("ScreenGui", player.PlayerGui)
 ui.Name = "EZEK_UI"
 local main = Instance.new("Frame", ui)
@@ -268,7 +265,7 @@ Instance.new("UICorner", main).CornerRadius = UDim.new(0,8)
 
 local title = Instance.new("TextLabel", main)
 title.Size = UDim2.new(1,0,0,35); title.BackgroundColor3 = Color3.fromRGB(15,15,20)
-title.Text = "EZEK v43.0"; title.TextColor3 = Color3.fromRGB(0,255,255); title.Font = Enum.Font.GothamBold; title.TextSize = 14
+title.Text = "EZEK v43.1"; title.TextColor3 = Color3.fromRGB(0,255,255); title.Font = Enum.Font.GothamBold; title.TextSize = 14
 Instance.new("UICorner", title).CornerRadius = UDim.new(0,8)
 
 local dragging, dragStart, startPos
@@ -296,6 +293,10 @@ local function mkBtn(txt, y, cb)
     b.MouseButton1Click:Connect(cb)
     return b
 end
+
+-- 🔥 AQUI ESTÁ A CORREÇÃO: Variáveis declaradas antes das funções
+local bLock
+local bEsp
 
 local function toggleLockManual()
     if ativo then
@@ -336,8 +337,8 @@ local function toggleEspManual()
     bEsp.BackgroundColor3 = espAtivo and Color3.fromRGB(0,150,0) or Color3.fromRGB(40,40,50)
 end
 
-local bLock = mkBtn("LOCK [K]: OFF", 45, toggleLockManual)
-local bEsp = mkBtn("ESP [L]: OFF", 82, toggleEspManual)
+bLock = mkBtn("LOCK [K]: OFF", 45, toggleLockManual)
+bEsp = mkBtn("ESP [L]: OFF", 82, toggleEspManual)
 
 local bMira = mkBtn("MIRA: CABEÇA", 119, function()
     miraPeito = not miraPeito
@@ -401,4 +402,4 @@ UIS.InputEnded:Connect(function(input)
     if input.KeyCode == Enum.KeyCode.ButtonL2 then l2 = false end
 end)
 
-print("⚡ EZEK v43.0 Carregado! Fim do lag.")
+print("⚡ EZEK v43.1 Carregado! Botoes Consertados.")
