@@ -1,4 +1,4 @@
--- EZEK v10.2 - Lag Consertado e Inclinação Original de Volta
+-- EZEK v10.7 - Câmera Fixa no Lugar, Apenas Inclinada
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UIS = game:GetService("UserInputService")
@@ -15,7 +15,7 @@ local ativo, espAtivo = false, false
 local alvo, hpBar = nil, nil
 local align, attach = nil, nil
 local miraPeito = false
-local alturaCam = 2.0 -- 🔥 Voltou pro original
+local alturaCam = 2.0 
 local filtros = {players=true, dummies=true, monstros=true, objetos=true} 
 local espGui = Instance.new("ScreenGui", player.PlayerGui)
 espGui.Name = "EZEK_ESP"
@@ -71,7 +71,6 @@ local function adicionarAlvo(v)
     end
 end
 
--- Sistema de eventos (Fim do lag)
 for _, v in ipairs(workspace:GetDescendants()) do adicionarAlvo(v) end
 
 workspace.DescendantAdded:Connect(function(v)
@@ -162,8 +161,9 @@ local function atualizarLock()
         if cabeca then miraPos = cabeca.Position end
     end
     
-    miraPos = miraPos + Vector3.new(0, alturaCam, 0)
-    camera.CFrame = CFrame.lookAt(camera.CFrame.Position, miraPos)
+    -- 🔥 A CÂMERA NÃO SE MOVE. SÓ O PONTO DE MIRA SOBE PRA INCLINAR.
+    local miraInclinada = miraPos + Vector3.new(0, alturaCam, 0)
+    camera.CFrame = CFrame.lookAt(camera.CFrame.Position, miraInclinada)
 
     if hpBar then
         local hp, mx = getVida(alvo)
@@ -264,7 +264,7 @@ Instance.new("UICorner", main).CornerRadius = UDim.new(0,8)
 
 local title = Instance.new("TextLabel", main)
 title.Size = UDim2.new(1,0,0,35); title.BackgroundColor3 = Color3.fromRGB(15,15,20)
-title.Text = "EZEK v10.2"; title.TextColor3 = Color3.fromRGB(0,255,255); title.Font = Enum.Font.GothamBold; title.TextSize = 14
+title.Text = "EZEK v10.7"; title.TextColor3 = Color3.fromRGB(0,255,255); title.Font = Enum.Font.GothamBold; title.TextSize = 14
 Instance.new("UICorner", title).CornerRadius = UDim.new(0,8)
 
 local dragging, dragStart, startPos
@@ -296,7 +296,7 @@ end
 local bLock = mkBtn("LOCK [K]: OFF", 45, function() end)
 local bEsp = mkBtn("ESP [L]: OFF", 82, function() end)
 local bMira = mkBtn("MIRA: CABEÇA", 119, function() end)
-local bCam = mkBtn("INCLINAÇÃO: 2.0", 156, function() end)
+local bCam = mkBtn("INCLINAÇÃO: 2.0", 156, function() end) 
 
 local function toggleLockManual()
     if ativo then
@@ -344,7 +344,6 @@ bMira.MouseButton1Click:Connect(function()
 end)
 
 bCam.MouseButton1Click:Connect(function()
-    -- 🔥 Voltou pros valores originais (2, 4, 6, 8)
     if alturaCam == 2.0 then alturaCam = 4.0
     elseif alturaCam == 4.0 then alturaCam = 6.0
     elseif alturaCam == 6.0 then alturaCam = 8.0
@@ -400,4 +399,4 @@ UIS.InputEnded:Connect(function(input)
     if input.KeyCode == Enum.KeyCode.ButtonL2 then l2 = false end
 end)
 
-print("⚡ EZEK v10.2 Carregado! Inclinação Original.")
+print("⚡ EZEK v10.7 Carregado! Inclinação no Ângulo.")
