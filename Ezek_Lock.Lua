@@ -1,4 +1,4 @@
--- EZEK v10.0 - Lock em Tudo + UI Consertada
+-- EZEK v10.2 - Lag Consertado e Inclinação Original de Volta
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UIS = game:GetService("UserInputService")
@@ -15,7 +15,7 @@ local ativo, espAtivo = false, false
 local alvo, hpBar = nil, nil
 local align, attach = nil, nil
 local miraPeito = false
-local alturaCam = 2.0
+local alturaCam = 2.0 -- 🔥 Voltou pro original
 local filtros = {players=true, dummies=true, monstros=true, objetos=true} 
 local espGui = Instance.new("ScreenGui", player.PlayerGui)
 espGui.Name = "EZEK_ESP"
@@ -23,7 +23,6 @@ espGui.Name = "EZEK_ESP"
 local alvosESP = {} 
 local espEl = {}
 
--- FUNÇÕES BASE
 local function getVida(m)
     local h = m:FindFirstChildOfClass("Humanoid") or m:FindFirstChildWhichIsA("Humanoid", true)
     if h then return h.Health, h.MaxHealth end
@@ -59,58 +58,52 @@ local function getTipo(m)
     return "outros" 
 end
 
--- BUSCA PROFUNDA (Pega Player, Dummy, Monstro, NPC)
-local function carregarAlvos()
-    local lista, vistos = {}, {}
+local function adicionarAlvo(v)
+    if not v:IsA("Model") or v == player.Character then return end
+    if not getParte(v) then return end
+    local tipo = getTipo(v)
+    if tipo == "outros" then return end
     
-    for _, p in pairs(Players:GetPlayers()) do
-        if p ~= player and p.Character and temVida(p.Character) then 
-            table.insert(lista, p.Character); vistos[p.Character]=true 
+    if filtros[tipo] then
+        if not table.find(alvosESP, v) then
+            table.insert(alvosESP, v)
         end
     end
-    
-    local function proc(pasta, prof)
-        if prof > 6 then return end
-        for _, v in pairs(pasta:GetChildren()) do
-            if v:IsA("Model") and not vistos[v] and getParte(v) then
-                local tipo = getTipo(v)
-                if tipo == "objetos" then
-                    if filtros.objetos then table.insert(lista, v); vistos[v]=true end
-                elseif tipo == "players" or tipo == "dummies" or tipo == "monstros" then
-                    if filtros[tipo] and temVida(v) then 
-                        table.insert(lista, v); vistos[v]=true 
-                    end
-                end
-            end
-            if v:IsA("Folder") or v:IsA("Model") then proc(v, prof+1) end
-        end
-    end
-    proc(workspace, 0)
-    alvosESP = lista
 end
-carregarAlvos()
 
-task.spawn(function()
-    while true do
-        task.wait(1.5)
-        carregarAlvos()
-    end
+-- Sistema de eventos (Fim do lag)
+for _, v in ipairs(workspace:GetDescendants()) do adicionarAlvo(v) end
+
+workspace.DescendantAdded:Connect(function(v)
+    task.wait(0.5)
+    if v:IsA("Model") then adicionarAlvo(v) end
 end)
+
+local function limparAlvos()
+    for i = #alvosESP, 1, -1 do
+        local m = alvosESP[i]
+        if not m.Parent or (not temVida(m) and getTipo(m) ~= "objetos") or not filtros[getTipo(m)] then
+            table.remove(alvosESP, i)
+            if espEl[m] then
+                espEl[m].cont:Destroy()
+                espEl[m] = nil
+            end
+        end
+    end
+end
 
 local function acharAlvo()
     local melhor, angMin = nil, math.rad(120)
     local cp = camera.CFrame.Position
     local cl = camera.CFrame.LookVector
     for _, m in pairs(alvosESP) do
-        if m ~= player.Character and not m:IsDescendantOf(player.Character) then
-            if filtros[getTipo(m)] and (temVida(m) or getTipo(m) == "objetos") then
-                local p = getParte(m)
-                if p then
-                    local dist = (p.Position - cp).Magnitude
-                    if dist > 0.5 then
-                        local ang = math.acos(math.clamp(cl:Dot((p.Position - cp).Unit), -1, 1))
-                        if ang < angMin then angMin = ang; melhor = m end
-                    end
+        if m ~= player.Character then
+            local p = getParte(m)
+            if p and (temVida(m) or getTipo(m) == "objetos") then
+                local dist = (p.Position - cp).Magnitude
+                if dist > 0.5 then
+                    local ang = math.acos(math.clamp(cl:Dot((p.Position - cp).Unit), -1, 1))
+                    if ang < angMin then angMin = ang; melhor = m end
                 end
             end
         end
@@ -189,20 +182,14 @@ RunService.Heartbeat:Connect(function()
     if tick() - lastEspTick < 0.05 then return end
     lastEspTick = tick()
 
+    limparAlvos()
+
     local char = player.Character
     local root = char and char:FindFirstChild("HumanoidRootPart")
     if not root then return end
 
     local alvoPreview = nil
     if not ativo then alvoPreview = acharAlvo() end
-
-    -- Limpeza
-    for m, d in pairs(espEl) do
-        if not m.Parent or (not temVida(m) and getTipo(m) ~= "objetos") then
-            d.cont:Destroy()
-            espEl[m] = nil
-        end
-    end
 
     for _, m in pairs(alvosESP) do
         local p = getParte(m)
@@ -266,7 +253,7 @@ RunService.Heartbeat:Connect(function()
     end
 end)
 
--- ===================== UI =====================
+-- UI
 local ui = Instance.new("ScreenGui", player.PlayerGui)
 ui.Name = "EZEK_UI"
 local main = Instance.new("Frame", ui)
@@ -277,7 +264,7 @@ Instance.new("UICorner", main).CornerRadius = UDim.new(0,8)
 
 local title = Instance.new("TextLabel", main)
 title.Size = UDim2.new(1,0,0,35); title.BackgroundColor3 = Color3.fromRGB(15,15,20)
-title.Text = "EZEK v10.0"; title.TextColor3 = Color3.fromRGB(0,255,255); title.Font = Enum.Font.GothamBold; title.TextSize = 14
+title.Text = "EZEK v10.2"; title.TextColor3 = Color3.fromRGB(0,255,255); title.Font = Enum.Font.GothamBold; title.TextSize = 14
 Instance.new("UICorner", title).CornerRadius = UDim.new(0,8)
 
 local dragging, dragStart, startPos
@@ -306,13 +293,11 @@ local function mkBtn(txt, y, cb)
     return b
 end
 
--- 🔥 DECLARA OS BOTOES PRIMEIRO PRA NÃO DAR ERRO DE NIL (UI CONSERTADA)
 local bLock = mkBtn("LOCK [K]: OFF", 45, function() end)
 local bEsp = mkBtn("ESP [L]: OFF", 82, function() end)
 local bMira = mkBtn("MIRA: CABEÇA", 119, function() end)
 local bCam = mkBtn("INCLINAÇÃO: 2.0", 156, function() end)
 
--- FUNÇÕES DE TOGGLE
 local function toggleLockManual()
     if ativo then
         pararLock()
@@ -320,10 +305,7 @@ local function toggleLockManual()
         bLock.BackgroundColor3 = Color3.fromRGB(40,40,50)
     else
         local t = acharAlvo()
-        if not t then 
-            print("❌ Nenhum alvo na mira.")
-            return 
-        end
+        if not t then return end
         alvo = t; ativo = true
         criarHPBar(t)
         local root = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
@@ -352,7 +334,6 @@ local function toggleEspManual()
     bEsp.BackgroundColor3 = espAtivo and Color3.fromRGB(0,150,0) or Color3.fromRGB(40,40,50)
 end
 
--- CONECTA OS CLIQUES
 bLock.MouseButton1Click:Connect(toggleLockManual)
 bEsp.MouseButton1Click:Connect(toggleEspManual)
 
@@ -363,6 +344,7 @@ bMira.MouseButton1Click:Connect(function()
 end)
 
 bCam.MouseButton1Click:Connect(function()
+    -- 🔥 Voltou pros valores originais (2, 4, 6, 8)
     if alturaCam == 2.0 then alturaCam = 4.0
     elseif alturaCam == 4.0 then alturaCam = 6.0
     elseif alturaCam == 6.0 then alturaCam = 8.0
@@ -389,7 +371,6 @@ local function mkChk(txt, chave, y)
         filtros[chave] = not filtros[chave]
         btn.BackgroundColor3 = filtros[chave] and Color3.fromRGB(0,150,0) or Color3.fromRGB(60,60,75)
         btn.Text = filtros[chave] and "✓" or ""
-        carregarAlvos()
     end end)
 end
 
@@ -398,7 +379,6 @@ mkChk("Dummies", "dummies", 245)
 mkChk("Monstros", "monstros", 270)
 mkChk("Objetos", "objetos", 295)
 
--- Atalhos do Teclado e Controle
 CAS:BindAction("EzekLock", function(_, state) if state == Enum.UserInputState.Begin then toggleLockManual() end end, false, Enum.KeyCode.K)
 CAS:BindAction("EzekEsp", function(_, state) if state == Enum.UserInputState.Begin then toggleEspManual() end end, false, Enum.KeyCode.L)
 
@@ -420,4 +400,4 @@ UIS.InputEnded:Connect(function(input)
     if input.KeyCode == Enum.KeyCode.ButtonL2 then l2 = false end
 end)
 
-print("⚡ EZEK v10.0 Carregado! UI e Lock Consertados.")
+print("⚡ EZEK v10.2 Carregado! Inclinação Original.")
