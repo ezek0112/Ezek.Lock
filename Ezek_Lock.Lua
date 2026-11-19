@@ -1,4 +1,4 @@
--- EZEK v10.9 (A v10 original com a porra da inclinação)
+-- EZEK v11.1 (Inclinação pro chão e zero lag no loop)
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UIS = game:GetService("UserInputService")
@@ -10,7 +10,7 @@ for _, obj in pairs(player:WaitForChild("PlayerGui"):GetChildren()) do
 end
 pcall(function() RunService:UnbindFromRenderStep("EZEK_CAM") end)
 
-local VERSAO = "v10.9"
+local VERSAO = "v11.1"
 local FOV_GRAUS = 120 
 local ativo, alvo, espAtivo = false, nil, false
 local gyro = nil
@@ -19,7 +19,7 @@ local miraPeito = false
 local alturaCam = 2.0
 local filtros = {players=true, dummies=true, monstros=true, objetos=true}
 local espEl = {}
-local alvosESP = {}
+local alvosCache = {}
 
 local function getVida(m)
     local h = m:FindFirstChildOfClass("Humanoid") or m:FindFirstChildWhichIsA("Humanoid", true)
@@ -46,6 +46,7 @@ local function getTipo(m)
     return "objetos"
 end
 
+-- Busca pesada roda só 1x por segundo em background
 local function getTodos()
     local lista, vistos = {}, {}
     for _, p in pairs(Players:GetPlayers()) do
@@ -64,11 +65,18 @@ local function getTodos()
     return lista
 end
 
+task.spawn(function()
+    while true do
+        alvosCache = getTodos()
+        task.wait(1)
+    end
+end)
+
 local function acharAlvo()
     local melhor, melhorAng = nil, math.rad(FOV_GRAUS)
     local cp = camera.CFrame.Position
     local cl = camera.CFrame.LookVector
-    for _, m in pairs(getTodos()) do
+    for _, m in pairs(alvosCache) do
         if m ~= player.Character and filtros[getTipo(m)] and temVida(m) then
             local parte = pegarParte(m)
             if parte then
@@ -178,7 +186,7 @@ local function atualizar()
         if cabeca then miraPos = cabeca.Position end
     end
     
-    -- A PORRA DA CÂMERA OLHANDO PRO INIMIGO E INCLINADA PRA BAIXO
+    -- Câmera olhando pro inimigo e inclinada pro chão
     local lookAtCF = CFrame.lookAt(camera.CFrame.Position, miraPos)
     camera.CFrame = lookAtCF * CFrame.Angles(math.rad(-alturaCam * 5), 0, 0)
     
@@ -259,7 +267,7 @@ RunService.RenderStepped:Connect(function()
                 d.cont:Destroy(); espEl[m] = nil
             end
         end
-        for _, m in pairs(getTodos()) do
+        for _, m in pairs(alvosCache) do
             if filtros[getTipo(m)] and temVida(m) then
                 local p = pegarParte(m)
                 if p then
@@ -292,7 +300,7 @@ RunService.RenderStepped:Connect(function()
 end)
 
 local sg = Instance.new("ScreenGui", player.PlayerGui)
-sg.Name = "EZEK_GUI_v10"; sg.ResetOnSpawn = false
+sg.Name = "EZEK_GUI_v11"; sg.ResetOnSpawn = false
 local main = Instance.new("Frame", sg)
 main.Size = UDim2.new(0, 200, 0, 470); main.Position = UDim2.new(0, 15, 0, 60)
 main.BackgroundColor3 = Color3.fromRGB(20,20,25); main.BorderSizePixel = 0; main.Active = true
