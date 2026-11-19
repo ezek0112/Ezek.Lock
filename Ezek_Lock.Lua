@@ -1,4 +1,4 @@
--- EZEK v48.0
+-- EZEK v10.9 (A v10 original com a porra da inclinação)
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UIS = game:GetService("UserInputService")
@@ -10,9 +10,11 @@ for _, obj in pairs(player:WaitForChild("PlayerGui"):GetChildren()) do
 end
 pcall(function() RunService:UnbindFromRenderStep("EZEK_CAM") end)
 
-local ativo, espAtivo = false, false
-local alvo, hpBar = nil, nil
+local VERSAO = "v10.9"
+local FOV_GRAUS = 120 
+local ativo, alvo, espAtivo = false, nil, false
 local gyro = nil
+local hpBar = nil
 local miraPeito = false
 local alturaCam = 2.0
 local filtros = {players=true, dummies=true, monstros=true, objetos=true}
@@ -50,7 +52,7 @@ local function getTodos()
         if p ~= player and p.Character and temVida(p.Character) then table.insert(lista, p.Character); vistos[p.Character]=true end
     end
     local function proc(pasta, prof)
-        if prof > 5 then return end
+        if prof > 5 then return end 
         for _, v in pairs(pasta:GetChildren()) do
             if v:IsA("Model") and not vistos[v] and temVida(v) and pegarParte(v) then
                 table.insert(lista, v); vistos[v]=true
@@ -63,18 +65,19 @@ local function getTodos()
 end
 
 local function acharAlvo()
-    local melhor, angMin = nil, math.rad(120)
+    local melhor, melhorAng = nil, math.rad(FOV_GRAUS)
     local cp = camera.CFrame.Position
     local cl = camera.CFrame.LookVector
     for _, m in pairs(getTodos()) do
         if m ~= player.Character and filtros[getTipo(m)] and temVida(m) then
-            local p = pegarParte(m)
-            if p then
-                local dist = (p.Position - cp).Magnitude
+            local parte = pegarParte(m)
+            if parte then
+                local dist = (parte.Position - cp).Magnitude
                 if dist > 0.5 then 
-                    local ang = math.acos(math.clamp(cl:Dot((p.Position - cp).Unit),-1,1))
-                    if ang < angMin then
-                        angMin = ang
+                    local dir = (parte.Position - cp).Unit
+                    local ang = math.acos(math.clamp(cl:Dot(dir),-1,1))
+                    if ang < melhorAng then
+                        melhorAng = ang
                         melhor = m
                     end
                 end
@@ -84,6 +87,50 @@ local function acharAlvo()
     return melhor
 end
 
+local function criarHPBar(m)
+    if hpBar and hpBar.Parent then hpBar:Destroy() end
+    local root = pegarParte(m)
+    if not root then return end
+    local bb = Instance.new("BillboardGui", m)
+    bb.Adornee = root; bb.Size = UDim2.new(0, 150, 0, 45); bb.StudsOffset = Vector3.new(0, 3, 0); bb.AlwaysOnTop = true
+    hpBar = bb
+    
+    local nome = Instance.new("TextLabel", bb)
+    nome.Name = "N"; nome.Size = UDim2.new(1,0,0,14); nome.Position = UDim2.new(0,0,0,0)
+    nome.BackgroundTransparency = 1; nome.Text = m.Name; nome.TextColor3 = Color3.new(1,1,1)
+    nome.TextStrokeTransparency = 0; nome.Font = Enum.Font.GothamBold; nome.TextSize = 12
+    nome.TextXAlignment = Enum.TextXAlignment.Center
+
+    local bg = Instance.new("Frame", bb)
+    bg.Name = "B"; bg.Size = UDim2.new(1,0,0,10); bg.Position = UDim2.new(0,0,0,16)
+    bg.BackgroundColor3 = Color3.fromRGB(20,20,20); bg.BorderSizePixel = 0
+    Instance.new("UICorner", bg).CornerRadius = UDim.new(1,0)
+    
+    local fill = Instance.new("Frame", bg)
+    fill.Name = "F"; fill.Size = UDim2.new(1,0,1,0); fill.BackgroundColor3 = Color3.fromRGB(0,200,0); fill.BorderSizePixel = 0
+    Instance.new("UICorner", fill).CornerRadius = UDim.new(1,0)
+
+    local hpText = Instance.new("TextLabel", bb)
+    hpText.Name = "H"; hpText.Size = UDim2.new(1,0,0,14); hpText.Position = UDim2.new(0,0,0,28)
+    hpText.BackgroundTransparency = 1; hpText.TextColor3 = Color3.new(1,1,1)
+    hpText.TextStrokeTransparency = 0; hpText.Font = Enum.Font.GothamBold; hpText.TextSize = 11
+    hpText.TextXAlignment = Enum.TextXAlignment.Center
+end
+
+local function updateHPBar()
+    if not hpBar or not alvo then return end
+    local hp, mx = getVida(alvo)
+    if not hp then return end
+    local pct = math.clamp(hp/(mx or 100),0,1)
+    local f = hpBar:FindFirstChild("B") and hpBar.B:FindFirstChild("F")
+    if f then
+        f.Size = UDim2.new(pct,0,1,0)
+        f.BackgroundColor3 = pct>0.6 and Color3.fromRGB(0,200,0) or (pct>0.3 and Color3.fromRGB(255,200,0) or Color3.fromRGB(255,50,50))
+    end
+    local hTxt = hpBar:FindFirstChild("H")
+    if hTxt then hTxt.Text = string.format("%d/%d", math.floor(hp), math.floor(mx or 100)) end
+end
+
 local function pararLock()
     if not ativo then return end
     ativo = false; alvo = nil
@@ -91,46 +138,35 @@ local function pararLock()
     if gyro then gyro:Destroy(); gyro = nil end
     if hpBar then hpBar:Destroy(); hpBar = nil end
     local h = player.Character and player.Character:FindFirstChildOfClass("Humanoid")
-    if h then h.AutoRotate = true end
+    if h then 
+        h.AutoRotate = true 
+        h.CameraOffset = Vector3.new(0,0,0)
+    end
+    pcall(function()
+        camera.CameraType = Enum.CameraType.Custom
+        if h then camera.CameraSubject = h end
+    end)
 end
 
-local function criarHPBar(m)
-    if hpBar then hpBar:Destroy() end
-    local root = pegarParte(m)
-    if not root then return end
-    hpBar = Instance.new("BillboardGui", m)
-    hpBar.Adornee = root; hpBar.Size = UDim2.new(0, 150, 0, 45); hpBar.StudsOffset = Vector3.new(0, 3, 0); hpBar.AlwaysOnTop = true
-    
-    local nome = Instance.new("TextLabel", hpBar)
-    nome.Size = UDim2.new(1,0,0,14); nome.BackgroundTransparency = 1; nome.Text = m.Name; nome.TextColor3 = Color3.new(1,1,1); nome.TextStrokeTransparency = 0; nome.Font = Enum.Font.GothamBold; nome.TextSize = 12
-    
-    local bg = Instance.new("Frame", hpBar)
-    bg.Name = "BG"; bg.Size = UDim2.new(1,0,0,10); bg.Position = UDim2.new(0,0,0,16); bg.BackgroundColor3 = Color3.fromRGB(20,20,20); bg.BorderSizePixel = 0
-    Instance.new("UICorner", bg).CornerRadius = UDim.new(1,0)
-    
-    local fill = Instance.new("Frame", bg)
-    fill.Name = "Fill"; fill.Size = UDim2.new(1,0,1,0); fill.BackgroundColor3 = Color3.fromRGB(0,200,0); fill.BorderSizePixel = 0
-    Instance.new("UICorner", fill).CornerRadius = UDim.new(1,0)
-    
-    local hpTxt = Instance.new("TextLabel", hpBar)
-    hpTxt.Name = "Txt"; hpTxt.Size = UDim2.new(1,0,0,14); hpTxt.Position = UDim2.new(0,0,0,28); hpTxt.BackgroundTransparency = 1; hpTxt.TextColor3 = Color3.new(1,1,1); hpTxt.TextStrokeTransparency = 0; hpTxt.Font = Enum.Font.GothamBold; hpTxt.TextSize = 11
-end
-
-local function atualizarLock()
+local function atualizar()
     if not ativo or not alvo or not alvo.Parent or not temVida(alvo) then pararLock() return end
-    local char = player.Character
-    local root = char and char:FindFirstChild("HumanoidRootPart")
-    local h = char and char:FindFirstChildOfClass("Humanoid")
+    local c = player.Character
+    if not c then pararLock() return end
+    local r = c:FindFirstChild("HumanoidRootPart")
+    local h = c:FindFirstChildOfClass("Humanoid")
     local p = pegarParte(alvo)
-    if not root or not h or not p then pararLock() return end
+    if not r or not h or not p then pararLock() return end
+
+    if h.CameraOffset.Magnitude > 0.01 then h.CameraOffset = Vector3.new(0,0,0) end
+    if h.AutoRotate then h.AutoRotate = false end
+    if h.PlatformStand then h.PlatformStand = false end
 
     if gyro then
-        local targetPos = Vector3.new(p.Position.X, root.Position.Y, p.Position.Z)
-        if (targetPos - root.Position).Magnitude > 0.1 then gyro.CFrame = CFrame.lookAt(root.Position, targetPos) end
+        local targetPos = Vector3.new(p.Position.X, r.Position.Y, p.Position.Z)
+        if (targetPos - r.Position).Magnitude > 0.1 then gyro.CFrame = CFrame.lookAt(r.Position, targetPos) end
     end
     
-    h.AutoRotate = false
-    camera.CameraType = Enum.CameraType.Custom
+    if camera.CameraType ~= Enum.CameraType.Custom then camera.CameraType = Enum.CameraType.Custom end
     if camera.CameraSubject ~= h then camera.CameraSubject = h end
 
     local miraPos = p.Position
@@ -142,25 +178,17 @@ local function atualizarLock()
         if cabeca then miraPos = cabeca.Position end
     end
     
-    miraPos = miraPos + Vector3.new(0, alturaCam, 0)
-    camera.CFrame = CFrame.lookAt(camera.CFrame.Position, miraPos)
-
-    if hpBar then
-        local hp, mx = getVida(alvo)
-        if hp then
-            local pct = math.clamp(hp/(mx or 100),0,1)
-            local fill = hpBar.BG.Fill
-            fill.Size = UDim2.new(pct,0,1,0)
-            fill.BackgroundColor3 = pct>0.6 and Color3.fromRGB(0,200,0) or (pct>0.3 and Color3.fromRGB(255,200,0) or Color3.fromRGB(255,50,50))
-            hpBar.Txt.Text = string.format("%d/%d | %dm", math.floor(hp), math.floor(mx or 100), math.floor((p.Position - root.Position).Magnitude))
-        end
-    end
+    -- A PORRA DA CÂMERA OLHANDO PRO INIMIGO E INCLINADA PRA BAIXO
+    local lookAtCF = CFrame.lookAt(camera.CFrame.Position, miraPos)
+    camera.CFrame = lookAtCF * CFrame.Angles(math.rad(-alturaCam * 5), 0, 0)
+    
+    updateHPBar()
 end
 
 local function toggleLock()
     if ativo then pararLock() else
         local t = acharAlvo()
-        if not t then print("❌ Sem alvo na mira.") return end
+        if not t then print("❌ Sem alvo") return end
         alvo = t; ativo = true
         criarHPBar(t)
         local root = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
@@ -170,7 +198,7 @@ local function toggleLock()
             gyro.P = 100000; gyro.D = 1000; gyro.MaxTorque = Vector3.new(math.huge, math.huge, math.huge)
         end
         RunService:UnbindFromRenderStep("EZEK_CAM")
-        RunService:BindToRenderStep("EZEK_CAM", Enum.RenderPriority.Camera.Value + 1, atualizarLock)
+        RunService:BindToRenderStep("EZEK_CAM", Enum.RenderPriority.Camera.Value + 1, atualizar)
     end
 end
 
@@ -228,8 +256,7 @@ RunService.RenderStepped:Connect(function()
     if espAtivo then
         for m, d in pairs(espEl) do
             if not m.Parent or not temVida(m) then
-                d.cont:Destroy()
-                espEl[m] = nil
+                d.cont:Destroy(); espEl[m] = nil
             end
         end
         for _, m in pairs(getTodos()) do
@@ -254,7 +281,7 @@ RunService.RenderStepped:Connect(function()
                             d.cont.Visible = true
                             d.cont.Size = UDim2.new(0, lar, 0, alt); d.cont.Position = UDim2.new(0, cx, 0, cy)
                             local hVal, hMax = getVida(m)
-                            local dist = math.floor((p.Position - r.Position).Magnitude)
+                            local dist = math.floor((p.Position - mp).Magnitude)
                             if hVal then d.hp.Text = string.format("%d/%d | %dm", math.floor(hVal), math.floor(hMax or 100), dist) end
                         else d.cont.Visible = false end
                     else d.cont.Visible = false end
@@ -265,37 +292,132 @@ RunService.RenderStepped:Connect(function()
 end)
 
 local sg = Instance.new("ScreenGui", player.PlayerGui)
-sg.Name = "EZEK_GUI_v48"; sg.ResetOnSpawn = false
+sg.Name = "EZEK_GUI_v10"; sg.ResetOnSpawn = false
 local main = Instance.new("Frame", sg)
-main.Size = UDim2.new(0, 180, 0, 390); main.Position = UDim2.new(0, 20, 0.5, -195)
-main.BackgroundColor3 = Color3.fromRGB(25, 25, 30); main.BorderSizePixel = 0
-Instance.new("UICorner", main).CornerRadius = UDim.new(0, 8)
+main.Size = UDim2.new(0, 200, 0, 470); main.Position = UDim2.new(0, 15, 0, 60)
+main.BackgroundColor3 = Color3.fromRGB(20,20,25); main.BorderSizePixel = 0; main.Active = true
+Instance.new("UICorner", main).CornerRadius = UDim.new(0, 10)
 
-local title = Instance.new("TextLabel", main)
-title.Size = UDim2.new(1, 0, 0, 36); title.BackgroundColor3 = Color3.fromRGB(15, 15, 20)
-title.Text = "🎯 EZEK v48.0"; title.TextColor3 = Color3.fromRGB(0, 255, 255); title.Font = Enum.Font.GothamBold; title.TextSize = 14
-Instance.new("UICorner", title).CornerRadius = UDim.new(0, 8)
+local topBar = Instance.new("Frame", main)
+topBar.Size = UDim2.new(1,0,0,36); topBar.BackgroundColor3 = Color3.fromRGB(30,30,40)
+Instance.new("UICorner", topBar).CornerRadius = UDim.new(0, 10)
 
-local closeBtn = Instance.new("TextButton", title)
-closeBtn.Size = UDim2.new(0, 30, 1, 0); closeBtn.Position = UDim2.new(1, -30, 0, 0)
-closeBtn.BackgroundColor3 = Color3.fromRGB(200, 50, 50); closeBtn.Text = "X"; closeBtn.TextColor3 = Color3.new(1,1,1)
-Instance.new("UICorner", closeBtn).CornerRadius = UDim.new(0, 8)
-closeBtn.MouseButton1Click:Connect(function() sg:Destroy() end)
+local title = Instance.new("TextLabel", topBar)
+title.Size = UDim2.new(1,-70,1,0); title.Position = UDim2.new(0,10,0,0); title.BackgroundTransparency = 1
+title.Text = "🎯 EZEK "..VERSAO; title.TextColor3 = Color3.fromRGB(240,240,240); title.Font = Enum.Font.GothamBold; title.TextSize = 12; title.TextXAlignment = Enum.TextXAlignment.Left
 
-local minBtn = Instance.new("TextButton", title)
-minBtn.Size = UDim2.new(0, 30, 1, 0); minBtn.Position = UDim2.new(1, -60, 0, 0)
-minBtn.BackgroundColor3 = Color3.fromRGB(200, 150, 50); minBtn.Text = "-"; minBtn.TextColor3 = Color3.new(1,1,1)
-minBtn.Font = Enum.Font.GothamBold; minBtn.TextSize = 16
-Instance.new("UICorner", minBtn).CornerRadius = UDim.new(0, 8)
+local minBtn = Instance.new("TextButton", topBar)
+minBtn.Size = UDim2.new(0,26,0,26); minBtn.Position = UDim2.new(1,-60,0,5); minBtn.BackgroundColor3 = Color3.fromRGB(45,45,60)
+minBtn.Text = "—"; minBtn.TextColor3 = Color3.new(1,1,1); minBtn.Font = Enum.Font.GothamBold; minBtn.TextSize = 16
+Instance.new("UICorner", minBtn).CornerRadius = UDim.new(0, 6)
+
+local closeBtn = Instance.new("TextButton", topBar)
+closeBtn.Size = UDim2.new(0,26,0,26); closeBtn.Position = UDim2.new(1,-30,0,5); closeBtn.BackgroundColor3 = Color3.fromRGB(180,50,50)
+closeBtn.Text = "✕"; closeBtn.TextColor3 = Color3.new(1,1,1); closeBtn.Font = Enum.Font.GothamBold; closeBtn.TextSize = 14
+Instance.new("UICorner", closeBtn).CornerRadius = UDim.new(0, 6)
+
+local content = Instance.new("Frame", main)
+content.Size = UDim2.new(1,-10,1,-44); content.Position = UDim2.new(0,5,0,40); content.BackgroundTransparency = 1
+
+local statusFrame = Instance.new("Frame", content)
+statusFrame.Size = UDim2.new(1,0,0,40); statusFrame.BackgroundColor3 = Color3.fromRGB(30,30,40)
+Instance.new("UICorner", statusFrame).CornerRadius = UDim.new(0, 8)
+local statusLbl = Instance.new("TextLabel", statusFrame)
+statusLbl.Size = UDim2.new(1,-12,1,-8); statusLbl.Position = UDim2.new(0,6,0,4); statusLbl.BackgroundTransparency = 1
+statusLbl.Text = "🔓 Lock: OFF\n👁️ ESP: OFF"; statusLbl.TextColor3 = Color3.fromRGB(160,160,170); statusLbl.Font = Enum.Font.GothamMedium; statusLbl.TextSize = 11; statusLbl.TextXAlignment = Enum.TextXAlignment.Left; statusLbl.TextYAlignment = Enum.TextYAlignment.Top
+
+local function mkBtn(txt, y, cb)
+    local b = Instance.new("TextButton", content)
+    b.Size = UDim2.new(1,0,0,36); b.Position = UDim2.new(0,0,0,y)
+    b.BackgroundColor3 = Color3.fromRGB(45,45,60); b.Text = txt; b.TextColor3 = Color3.new(1,1,1); b.Font = Enum.Font.GothamBold; b.TextSize = 12
+    Instance.new("UICorner", b).CornerRadius = UDim.new(0, 8)
+    b.MouseButton1Click:Connect(cb)
+    return b
+end
+
+local bLock, bEsp, bMira, bCam
+
+local function updateUI()
+    bLock.Text = ativo and "🔒 LOCK: ON" or "🔓 LOCK: OFF"
+    bLock.BackgroundColor3 = ativo and Color3.fromRGB(0,170,90) or Color3.fromRGB(45,45,60)
+    bEsp.Text = espAtivo and "👁️ ESP: ON" or "👁️ ESP: OFF"
+    bEsp.BackgroundColor3 = espAtivo and Color3.fromRGB(0,170,90) or Color3.fromRGB(45,45,60)
+    statusLbl.Text = (ativo and "🔒 Lock: ON" or "🔓 Lock: OFF").."\n"..(espAtivo and "👁️ ESP: ON" or "👁️ ESP: OFF")
+end
+
+bLock = mkBtn("🔓 LOCK: OFF", 46, function() toggleLock(); updateUI() end)
+bEsp = mkBtn("👁️ ESP: OFF", 86, function() espAtivo = not espAtivo; updateUI() end)
+
+bMira = mkBtn("🎯 MIRA: CABEÇA", 126, function()
+    miraPeito = not miraPeito
+    bMira.Text = miraPeito and "🎯 MIRA: PEITO" or "🎯 MIRA: CABEÇA"
+end)
+
+bCam = mkBtn("📷 INCLINAÇÃO: 2.0", 166, function()
+    if alturaCam == 2.0 then alturaCam = 4.0
+    elseif alturaCam == 4.0 then alturaCam = 6.0
+    elseif alturaCam == 6.0 then alturaCam = 8.0
+    else alturaCam = 2.0 end
+    bCam.Text = "📷 INCLINAÇÃO: " .. tostring(alturaCam)
+end)
+
+local filtFrame = Instance.new("Frame", content)
+filtFrame.Size = UDim2.new(1,0,0,126); filtFrame.Position = UDim2.new(0,0,0,210); filtFrame.BackgroundColor3 = Color3.fromRGB(30,30,40)
+Instance.new("UICorner", filtFrame).CornerRadius = UDim.new(0, 8)
+
+local fTit = Instance.new("TextLabel", filtFrame)
+fTit.Size = UDim2.new(1,-10,0,16); fTit.Position = UDim2.new(0,6,0,2); fTit.BackgroundTransparency = 1
+fTit.Text = "🎛️ Filtros"; fTit.TextColor3 = Color3.fromRGB(160,160,170); fTit.Font = Enum.Font.GothamBold; fTit.TextSize = 10; fTit.TextXAlignment = Enum.TextXAlignment.Left
+
+local function mkCheck(txt, chave, y)
+    local cf = Instance.new("Frame", filtFrame)
+    cf.Size = UDim2.new(1,-12,0,24); cf.Position = UDim2.new(0,6,0,y); cf.BackgroundTransparency = 1
+    local box = Instance.new("TextButton", cf)
+    box.Size = UDim2.new(0,20,0,20); box.Position = UDim2.new(0,0,0,2)
+    box.BackgroundColor3 = filtros[chave] and Color3.fromRGB(0,170,90) or Color3.fromRGB(60,60,75)
+    box.Text = filtros[chave] and "✓" or ""; box.TextColor3 = Color3.new(1,1,1); box.Font = Enum.Font.GothamBold; box.TextSize = 12
+    Instance.new("UICorner", box).CornerRadius = UDim.new(0, 4)
+    
+    local lb = Instance.new("TextLabel", cf)
+    lb.Size = UDim2.new(1,-26,1,0); lb.Position = UDim2.new(0,26,0,0)
+    lb.BackgroundTransparency = 1; lb.Text = txt; lb.TextColor3 = Color3.new(1,1,1); lb.Font = Enum.Font.GothamMedium; lb.TextSize = 12; lb.TextXAlignment = Enum.TextXAlignment.Left
+    
+    box.MouseButton1Click:Connect(function()
+        filtros[chave] = not filtros[chave]
+        box.BackgroundColor3 = filtros[chave] and Color3.fromRGB(0,170,90) or Color3.fromRGB(60,60,75)
+        box.Text = filtros[chave] and "✓" or ""
+    end)
+end
+
+mkCheck("👤 Players", "players", 20)
+mkCheck("🎯 Dummies", "dummies", 44)
+mkCheck("👹 Monstros", "monstros", 68)
+mkCheck("📦 Objetos", "objetos", 92)
 
 local floatingBtn = Instance.new("TextButton", sg)
-floatingBtn.Size = UDim2.new(0, 44, 0, 44); floatingBtn.Position = UDim2.new(0, 20, 0, 100)
-floatingBtn.BackgroundColor3 = Color3.fromRGB(25, 25, 30); floatingBtn.Text = "🎯"; floatingBtn.TextSize = 20
-floatingBtn.TextColor3 = Color3.fromRGB(0, 255, 255)
+floatingBtn.Size = UDim2.new(0, 44, 0, 44); floatingBtn.Position = UDim2.new(1, -60, 0, 20)
+floatingBtn.BackgroundColor3 = Color3.fromRGB(30,30,40); floatingBtn.Text = "🎯"; floatingBtn.TextSize = 20; floatingBtn.TextColor3 = Color3.fromRGB(0,255,255)
 floatingBtn.Visible = false
 Instance.new("UICorner", floatingBtn).CornerRadius = UDim.new(1,0)
 
+local function drag(f,h)
+    h = h or f; local dr, ds, sp
+    h.InputBegan:Connect(function(i) if i.UserInputType == Enum.UserInputType.MouseButton1 or i.UserInputType == Enum.UserInputType.Touch then dr = true; ds = i.Position; sp = f.Position end end)
+    UIS.InputChanged:Connect(function(i) if dr and (i.UserInputType == Enum.UserInputType.MouseMovement or i.UserInputType == Enum.UserInputType.Touch) then local d = i.Position - ds; f.Position = UDim2.new(sp.X.Scale, sp.X.Offset + d.X, sp.Y.Scale, sp.Y.Offset + d.Y) end end)
+    UIS.InputEnded:Connect(function(i) if i.UserInputType == Enum.UserInputType.MouseButton1 or i.UserInputType == Enum.UserInputType.Touch then dr = false end end)
+end
+drag(main, topBar)
+drag(floatingBtn)
+
+local min = false
 minBtn.MouseButton1Click:Connect(function()
+    min = not min
+    main.Size = min and UDim2.new(0,200,0,36) or UDim2.new(0,200,0,470)
+    content.Visible = not min
+    minBtn.Text = min and "+" or "—"
+end)
+
+closeBtn.MouseButton1Click:Connect(function()
     main.Visible = false
     floatingBtn.Visible = true
 end)
@@ -305,111 +427,12 @@ floatingBtn.MouseButton1Click:Connect(function()
     floatingBtn.Visible = false
 end)
 
-local dragging, dragStart, startPos
-title.InputBegan:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-        dragging = true; dragStart = input.Position; startPos = main.Position
-        input.Changed:Connect(function() if input.UserInputState == Enum.UserInputState.End then dragging = false end end)
-    end
-end)
-UIS.InputChanged:Connect(function(input)
-    if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
-        local delta = input.Position - dragStart
-        main.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
-    end
-end)
-
-local function mkBtn(txt, y, cb)
-    local b = Instance.new("TextButton", main)
-    b.Size = UDim2.new(1,-20,0,35); b.Position = UDim2.new(0,10,0,y)
-    b.BackgroundColor3 = Color3.fromRGB(40,40,50); b.Text = txt; b.TextColor3 = Color3.new(1,1,1); b.Font = Enum.Font.GothamBold; b.TextSize = 12
-    Instance.new("UICorner", b).CornerRadius = UDim.new(0,6)
-    b.MouseButton1Click:Connect(cb)
-    return b
-end
-
-local bLock, bEsp
-
-local function toggleLockManual()
-    if ativo then
-        pararLock()
-        bLock.Text = "🔓 LOCK [K]: OFF"
-        bLock.BackgroundColor3 = Color3.fromRGB(40,40,50)
-    else
-        local t = acharAlvo()
-        if not t then return end
-        alvo = t; ativo = true
-        criarHPBar(t)
-        local root = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
-        if root then
-            if gyro then gyro:Destroy() end
-            gyro = Instance.new("BodyGyro", root)
-            gyro.P = 100000; gyro.D = 1000; gyro.MaxTorque = Vector3.new(math.huge, math.huge, math.huge)
-        end
-        RunService:UnbindFromRenderStep("EZEK_CAM")
-        RunService:BindToRenderStep("EZEK_CAM", Enum.RenderPriority.Camera.Value + 1, atualizarLock)
-        
-        bLock.Text = "🔒 LOCK [K]: ON"
-        bLock.BackgroundColor3 = Color3.fromRGB(0,150,0)
-    end
-end
-
-local function toggleEspManual()
-    espAtivo = not espAtivo
-    bEsp.Text = espAtivo and "👁️ ESP [L]: ON" or "👁️ ESP [L]: OFF"
-    bEsp.BackgroundColor3 = espAtivo and Color3.fromRGB(0,150,0) or Color3.fromRGB(40,40,50)
-end
-
-bLock = mkBtn("🔓 LOCK [K]: OFF", 45, toggleLockManual)
-bEsp = mkBtn("👁️ ESP [L]: OFF", 85, toggleEspManual)
-
-local bMira = mkBtn("🎯 MIRA: CABEÇA", 125, function()
-    miraPeito = not miraPeito
-    bMira.Text = miraPeito and "🎯 MIRA: PEITO" or "🎯 MIRA: CABEÇA"
-    bMira.BackgroundColor3 = miraPeito and Color3.fromRGB(180,50,50) or Color3.fromRGB(40,40,50)
-end)
-
-local bCam = mkBtn("📷 INCLINAÇÃO: 2.0", 165, function()
-    if alturaCam == 2.0 then alturaCam = 4.0
-    elseif alturaCam == 4.0 then alturaCam = 6.0
-    elseif alturaCam == 6.0 then alturaCam = 8.0
-    else alturaCam = 2.0 end
-    bCam.Text = "📷 INCLINAÇÃO: " .. tostring(alturaCam)
-end)
-
-local fTitle = Instance.new("TextLabel", main)
-fTitle.Size = UDim2.new(1,0,0,20); fTitle.Position = UDim2.new(0,0,0,210); fTitle.BackgroundTransparency = 1
-fTitle.Text = "Filtros:"; fTitle.TextColor3 = Color3.fromRGB(150,150,150); fTitle.Font = Enum.Font.GothamBold; fTitle.TextSize = 11
-
-local function mkChk(txt, chave, y)
-    local btn = Instance.new("TextButton", main)
-    btn.Size = UDim2.new(0,20,0,20); btn.Position = UDim2.new(0,10,0,y)
-    btn.BackgroundColor3 = filtros[chave] and Color3.fromRGB(0,150,0) or Color3.fromRGB(60,60,75)
-    btn.Text = filtros[chave] and "✓" or ""; btn.TextColor3 = Color3.new(1,1,1); btn.Font = Enum.Font.GothamBold; btn.TextSize = 12
-    Instance.new("UICorner", btn).CornerRadius = UDim.new(0,4)
-    
-    local lb = Instance.new("TextLabel", main)
-    lb.Size = UDim2.new(1,-40,0,20); lb.Position = UDim2.new(0,36,0,y); lb.BackgroundTransparency = 1
-    lb.Text = txt; lb.TextColor3 = Color3.new(1,1,1); lb.Font = Enum.Font.GothamMedium; lb.TextSize = 12; lb.TextXAlignment = Enum.TextXAlignment.Left
-    
-    lb.InputBegan:Connect(function(i) if i.UserInputType == Enum.UserInputType.MouseButton1 or i.UserInputType == Enum.UserInputType.Touch then 
-        filtros[chave] = not filtros[chave]
-        btn.BackgroundColor3 = filtros[chave] and Color3.fromRGB(0,150,0) or Color3.fromRGB(60,60,75)
-        btn.Text = filtros[chave] and "✓" or ""
-    end end)
-end
-
-mkChk("👤 Players", "players", 235)
-mkChk("🎯 Dummies", "dummies", 260)
-mkChk("👹 Monstros", "monstros", 285)
-mkChk("📦 Objetos", "objetos", 310)
-
 UIS.InputBegan:Connect(function(input, gp)
-    if gp then return end
-    if input.KeyCode == Enum.KeyCode.K then bLock:Activate() end
-    if input.KeyCode == Enum.KeyCode.L then bEsp:Activate() end
+    local nosso = input.KeyCode == Enum.KeyCode.K or input.KeyCode == Enum.KeyCode.L
+    if gp and not nosso then return end
+    if input.KeyCode == Enum.KeyCode.K then toggleLock(); updateUI() return end
+    if input.KeyCode == Enum.KeyCode.L then espAtivo = not espAtivo; updateUI() return end
 end)
 
 player.CharacterRemoving:Connect(function() if ativo then pararLock() end; limparPreview() end)
-
-print("⚡ EZEK v48.0 Carregado.")
+print("⚡ EZEK "..VERSAO.." Carregado! | K=Lock L=ESP")
