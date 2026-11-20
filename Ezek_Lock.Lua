@@ -1,8 +1,7 @@
--- EZEK v11.7 (Controles Corrigidos, Anti-Lag, Anti-Crash)
+-- EZEK v12.1 (Modo Streamer ON por padrão)
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UIS = game:GetService("UserInputService")
-local CAS = game:GetService("ContextActionService")
 local player = Players.LocalPlayer
 local camera = workspace.CurrentCamera
 
@@ -11,10 +10,10 @@ for _, obj in pairs(player:WaitForChild("PlayerGui"):GetChildren()) do
 end
 pcall(function() RunService:UnbindFromRenderStep("EZEK_CAM") end)
 
-local VERSAO = "v11.7"
+local VERSAO = "v12.1"
 local FOV_GRAUS = 120 
 local ativo, alvo, espAtivo = false, nil, false
-local panicoAtivo = false
+local modoFantasma = true -- 🔥 JÁ COMEÇA ATIVADO
 local gyro = nil
 local hpBar = nil
 local miraPeito = false
@@ -22,7 +21,7 @@ local alturaCam = 2.0
 local filtros = {players=true, dummies=true, monstros=true, objetos=true}
 local espEl = {}
 local alvosCache = {}
-local bLock, bEsp, bMira, bCam, bPanico, floatingBtn
+local bLock, bEsp, bMira, bCam, bFantasma
 
 local function getVida(m)
     local h = m:FindFirstChildOfClass("Humanoid") or m:FindFirstChildWhichIsA("Humanoid", true)
@@ -239,12 +238,6 @@ RunService.RenderStepped:Connect(function()
     if not r then return end
     local mp = r.Position
 
-    if panicoAtivo then
-        for _, d in pairs(espEl) do d.cont.Visible = false end
-        if previewEl then previewEl.cont.Visible = false end
-        return
-    end
-
     if not ativo then
         local t = acharAlvo()
         if t ~= previewAlvo then
@@ -262,6 +255,7 @@ RunService.RenderStepped:Connect(function()
                         previewEl.cont.Visible = true
                         previewEl.cont.Size = UDim2.new(0, lar, 0, alt)
                         previewEl.cont.Position = UDim2.new(0, cx, 0, cy)
+                        previewEl.st.Transparency = modoFantasma and 0.9 or 0
                     else previewEl.cont.Visible = false end
                 else previewEl.cont.Visible = false end
             end
@@ -296,6 +290,14 @@ RunService.RenderStepped:Connect(function()
                             d.cont.Visible = true
                             d.cont.Size = UDim2.new(0, lar, 0, alt); d.cont.Position = UDim2.new(0, cx, 0, cy)
                             
+                            if modoFantasma then
+                                d.st.Transparency = 0.9; d.st.Thickness = 1
+                                d.nm.TextTransparency = 1; d.hp.TextTransparency = 1
+                            else
+                                d.st.Transparency = 0.3; d.st.Thickness = 1.5
+                                d.nm.TextTransparency = 0; d.hp.TextTransparency = 0
+                            end
+
                             local hVal, hMax = getVida(m)
                             local dist = math.floor((p.Position - mp).Magnitude)
                             if hVal then d.hp.Text = string.format("%d/%d | %dm", math.floor(hVal), math.floor(hMax or 100), dist) end
@@ -308,7 +310,7 @@ RunService.RenderStepped:Connect(function()
 end)
 
 local sg = Instance.new("ScreenGui", player.PlayerGui)
-sg.Name = "EZEK_GUI_v11"; sg.ResetOnSpawn = false
+sg.Name = "EZEK_GUI_v12"; sg.ResetOnSpawn = false
 local main = Instance.new("Frame", sg)
 main.Size = UDim2.new(0, 200, 0, 470); main.Position = UDim2.new(0, 15, 0, 60)
 main.BackgroundColor3 = Color3.fromRGB(20,20,25); main.BorderSizePixel = 0; main.Active = true
@@ -375,12 +377,12 @@ bCam = mkBtn("📷 INCLINAÇÃO: 2.0", 166, function()
     bCam.Text = "📷 INCLINAÇÃO: " .. tostring(alturaCam)
 end)
 
-bPanico = mkBtn("🚨 BOTÃO DE PÂNICO [H]", 206, function()
-    panicoAtivo = not panicoAtivo
-    main.Visible = not panicoAtivo
-    if panicoAtivo and floatingBtn then floatingBtn.Visible = false end
+bFantasma = mkBtn("👻 MODO STREAMER: ON", 206, function()
+    modoFantasma = not modoFantasma
+    bFantasma.Text = modoFantasma and "👻 MODO STREAMER: ON" or "👻 MODO STREAMER: OFF"
+    bFantasma.BackgroundColor3 = modoFantasma and Color3.fromRGB(150,50,200) or Color3.fromRGB(45,45,60)
 end)
-bPanico.BackgroundColor3 = Color3.fromRGB(180,50,50)
+bFantasma.BackgroundColor3 = Color3.fromRGB(150,50,200) -- 🔥 JÁ COMEÇA ROXO
 
 local filtFrame = Instance.new("Frame", content)
 filtFrame.Size = UDim2.new(1,0,0,126); filtFrame.Position = UDim2.new(0,0,0,250); filtFrame.BackgroundColor3 = Color3.fromRGB(30,30,40)
@@ -449,7 +451,7 @@ floatingBtn.MouseButton1Click:Connect(function()
 end)
 
 -- ===================== CONTROLES =====================
-local held = {R1=false, R2=false, L1=false, L2=false, DpadRight=false, DpadDown=false, DpadLeft=false}
+local held = {R1=false, R2=false, L1=false, L2=false, DpadRight=false, DpadDown=false}
 
 local function onInput(input)
     if input.KeyCode == Enum.KeyCode.ButtonR1 then held.R1 = true end
@@ -458,7 +460,6 @@ local function onInput(input)
     if input.KeyCode == Enum.KeyCode.ButtonL2 then held.L2 = true end
     if input.KeyCode == Enum.KeyCode.DpadRight then held.DpadRight = true end
     if input.KeyCode == Enum.KeyCode.DpadDown then held.DpadDown = true end
-    if input.KeyCode == Enum.KeyCode.DpadLeft then held.DpadLeft = true end
 
     if (input.KeyCode == Enum.KeyCode.ButtonR1 and held.R2) or (input.KeyCode == Enum.KeyCode.ButtonR2 and held.R1) then
         toggleLock(); updateUI()
@@ -480,19 +481,10 @@ local function onInput(input)
         else alturaCam = 2.0 end
         bCam.Text = "📷 INCLINAÇÃO: " .. tostring(alturaCam)
     end
-
-    if (input.KeyCode == Enum.KeyCode.DpadLeft and held.R1) or (input.KeyCode == Enum.KeyCode.ButtonR1 and held.DpadLeft) then
-        bPanico:Activate()
-    end
 end
-
-CAS:BindAction("EzekLock", function(_, state) if state == Enum.UserInputState.Begin then onInput(Enum.KeyCode.ButtonR1) end end, false, Enum.KeyCode.ButtonR1)
-CAS:BindAction("EzekEsp", function(_, state) if state == Enum.UserInputState.Begin then onInput(Enum.KeyCode.ButtonL1) end end, false, Enum.KeyCode.ButtonL1)
-CAS:BindAction("EzekPanic", function(_, state) if state == Enum.UserInputState.Begin then bPanico:Activate() end end, false, Enum.KeyCode.DpadLeft)
 
 UIS.InputBegan:Connect(function(input, gp)
     if gp then return end
-    if input.KeyCode == Enum.KeyCode.H then bPanico:Activate() return end
     if input.KeyCode == Enum.KeyCode.K then toggleLock(); updateUI() return end
     if input.KeyCode == Enum.KeyCode.L then espAtivo = not espAtivo; updateUI() return end
     onInput(input)
@@ -505,8 +497,7 @@ UIS.InputEnded:Connect(function(input)
     if input.KeyCode == Enum.KeyCode.ButtonL2 then held.L2 = false end
     if input.KeyCode == Enum.KeyCode.DpadRight then held.DpadRight = false end
     if input.KeyCode == Enum.KeyCode.DpadDown then held.DpadDown = false end
-    if input.KeyCode == Enum.KeyCode.DpadLeft then held.DpadLeft = false end
 end)
 
 player.CharacterRemoving:Connect(function() if ativo then pararLock() end; limparPreview() end)
-print("⚡ EZEK "..VERSAO.." Carregado! | Controles e Anti-Lag aplicados.")
+print("⚡ EZEK "..VERSAO.." Carregado! | Modo Streamer ativo por padrão.")
