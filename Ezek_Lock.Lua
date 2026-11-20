@@ -1,7 +1,8 @@
--- EZEK v11.2 (Controles: R1+R2, L1+L2, R1+DpadRight, R1+DpadDown)
+-- EZEK v11.7 (Controles Corrigidos, Anti-Lag, Anti-Crash)
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UIS = game:GetService("UserInputService")
+local CAS = game:GetService("ContextActionService")
 local player = Players.LocalPlayer
 local camera = workspace.CurrentCamera
 
@@ -10,9 +11,10 @@ for _, obj in pairs(player:WaitForChild("PlayerGui"):GetChildren()) do
 end
 pcall(function() RunService:UnbindFromRenderStep("EZEK_CAM") end)
 
-local VERSAO = "v11.2"
+local VERSAO = "v11.7"
 local FOV_GRAUS = 120 
 local ativo, alvo, espAtivo = false, nil, false
+local panicoAtivo = false
 local gyro = nil
 local hpBar = nil
 local miraPeito = false
@@ -20,6 +22,7 @@ local alturaCam = 2.0
 local filtros = {players=true, dummies=true, monstros=true, objetos=true}
 local espEl = {}
 local alvosCache = {}
+local bLock, bEsp, bMira, bCam, bPanico, floatingBtn
 
 local function getVida(m)
     local h = m:FindFirstChildOfClass("Humanoid") or m:FindFirstChildWhichIsA("Humanoid", true)
@@ -67,7 +70,7 @@ end
 task.spawn(function()
     while true do
         alvosCache = getTodos()
-        task.wait(1)
+        task.wait(1.5)
     end
 end)
 
@@ -229,12 +232,18 @@ end
 
 local lastEspDraw = 0
 RunService.RenderStepped:Connect(function()
-    if tick() - lastEspDraw < 0.03 then return end
+    if tick() - lastEspDraw < 0.05 then return end
     lastEspDraw = tick()
 
     local r = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
     if not r then return end
     local mp = r.Position
+
+    if panicoAtivo then
+        for _, d in pairs(espEl) do d.cont.Visible = false end
+        if previewEl then previewEl.cont.Visible = false end
+        return
+    end
 
     if not ativo then
         local t = acharAlvo()
@@ -286,6 +295,7 @@ RunService.RenderStepped:Connect(function()
                             local lar = alt * 0.55; local cx = (top.X + bot.X) / 2; local cy = (top.Y + bot.Y) / 2
                             d.cont.Visible = true
                             d.cont.Size = UDim2.new(0, lar, 0, alt); d.cont.Position = UDim2.new(0, cx, 0, cy)
+                            
                             local hVal, hMax = getVida(m)
                             local dist = math.floor((p.Position - mp).Magnitude)
                             if hVal then d.hp.Text = string.format("%d/%d | %dm", math.floor(hVal), math.floor(hMax or 100), dist) end
@@ -341,8 +351,6 @@ local function mkBtn(txt, y, cb)
     return b
 end
 
-local bLock, bEsp, bMira, bCam
-
 local function updateUI()
     bLock.Text = ativo and "🔒 LOCK: ON" or "🔓 LOCK: OFF"
     bLock.BackgroundColor3 = ativo and Color3.fromRGB(0,170,90) or Color3.fromRGB(45,45,60)
@@ -367,8 +375,15 @@ bCam = mkBtn("📷 INCLINAÇÃO: 2.0", 166, function()
     bCam.Text = "📷 INCLINAÇÃO: " .. tostring(alturaCam)
 end)
 
+bPanico = mkBtn("🚨 BOTÃO DE PÂNICO [H]", 206, function()
+    panicoAtivo = not panicoAtivo
+    main.Visible = not panicoAtivo
+    if panicoAtivo and floatingBtn then floatingBtn.Visible = false end
+end)
+bPanico.BackgroundColor3 = Color3.fromRGB(180,50,50)
+
 local filtFrame = Instance.new("Frame", content)
-filtFrame.Size = UDim2.new(1,0,0,126); filtFrame.Position = UDim2.new(0,0,0,210); filtFrame.BackgroundColor3 = Color3.fromRGB(30,30,40)
+filtFrame.Size = UDim2.new(1,0,0,126); filtFrame.Position = UDim2.new(0,0,0,250); filtFrame.BackgroundColor3 = Color3.fromRGB(30,30,40)
 Instance.new("UICorner", filtFrame).CornerRadius = UDim.new(0, 8)
 
 local fTit = Instance.new("TextLabel", filtFrame)
@@ -400,7 +415,7 @@ mkCheck("🎯 Dummies", "dummies", 44)
 mkCheck("👹 Monstros", "monstros", 68)
 mkCheck("📦 Objetos", "objetos", 92)
 
-local floatingBtn = Instance.new("TextButton", sg)
+floatingBtn = Instance.new("TextButton", sg)
 floatingBtn.Size = UDim2.new(0, 44, 0, 44); floatingBtn.Position = UDim2.new(1, -60, 0, 20)
 floatingBtn.BackgroundColor3 = Color3.fromRGB(30,30,40); floatingBtn.Text = "🎯"; floatingBtn.TextSize = 20; floatingBtn.TextColor3 = Color3.fromRGB(0,255,255)
 floatingBtn.Visible = false
@@ -434,43 +449,30 @@ floatingBtn.MouseButton1Click:Connect(function()
 end)
 
 -- ===================== CONTROLES =====================
-local held = {
-    R1 = false, R2 = false, L1 = false, L2 = false,
-    DpadRight = false, DpadDown = false
-}
+local held = {R1=false, R2=false, L1=false, L2=false, DpadRight=false, DpadDown=false, DpadLeft=false}
 
-UIS.InputBegan:Connect(function(input, gp)
-    if gp then return end
-
-    -- Teclado K / L
-    if input.KeyCode == Enum.KeyCode.K then toggleLock(); updateUI() return end
-    if input.KeyCode == Enum.KeyCode.L then espAtivo = not espAtivo; updateUI() return end
-
-    -- Controle
+local function onInput(input)
     if input.KeyCode == Enum.KeyCode.ButtonR1 then held.R1 = true end
     if input.KeyCode == Enum.KeyCode.ButtonR2 then held.R2 = true end
     if input.KeyCode == Enum.KeyCode.ButtonL1 then held.L1 = true end
     if input.KeyCode == Enum.KeyCode.ButtonL2 then held.L2 = true end
     if input.KeyCode == Enum.KeyCode.DpadRight then held.DpadRight = true end
     if input.KeyCode == Enum.KeyCode.DpadDown then held.DpadDown = true end
+    if input.KeyCode == Enum.KeyCode.DpadLeft then held.DpadLeft = true end
 
-    -- R1 + R2 = Lock
     if (input.KeyCode == Enum.KeyCode.ButtonR1 and held.R2) or (input.KeyCode == Enum.KeyCode.ButtonR2 and held.R1) then
         toggleLock(); updateUI()
     end
 
-    -- L1 + L2 = ESP
     if (input.KeyCode == Enum.KeyCode.ButtonL1 and held.L2) or (input.KeyCode == Enum.KeyCode.ButtonL2 and held.L1) then
         espAtivo = not espAtivo; updateUI()
     end
 
-    -- R1 + DpadRight = Mudar Mira (Cabeça/Peito)
     if (input.KeyCode == Enum.KeyCode.DpadRight and held.R1) or (input.KeyCode == Enum.KeyCode.ButtonR1 and held.DpadRight) then
         miraPeito = not miraPeito
         bMira.Text = miraPeito and "🎯 MIRA: PEITO" or "🎯 MIRA: CABEÇA"
     end
 
-    -- R1 + DpadDown = Mudar Inclinação
     if (input.KeyCode == Enum.KeyCode.DpadDown and held.R1) or (input.KeyCode == Enum.KeyCode.ButtonR1 and held.DpadDown) then
         if alturaCam == 2.0 then alturaCam = 4.0
         elseif alturaCam == 4.0 then alturaCam = 6.0
@@ -478,6 +480,22 @@ UIS.InputBegan:Connect(function(input, gp)
         else alturaCam = 2.0 end
         bCam.Text = "📷 INCLINAÇÃO: " .. tostring(alturaCam)
     end
+
+    if (input.KeyCode == Enum.KeyCode.DpadLeft and held.R1) or (input.KeyCode == Enum.KeyCode.ButtonR1 and held.DpadLeft) then
+        bPanico:Activate()
+    end
+end
+
+CAS:BindAction("EzekLock", function(_, state) if state == Enum.UserInputState.Begin then onInput(Enum.KeyCode.ButtonR1) end end, false, Enum.KeyCode.ButtonR1)
+CAS:BindAction("EzekEsp", function(_, state) if state == Enum.UserInputState.Begin then onInput(Enum.KeyCode.ButtonL1) end end, false, Enum.KeyCode.ButtonL1)
+CAS:BindAction("EzekPanic", function(_, state) if state == Enum.UserInputState.Begin then bPanico:Activate() end end, false, Enum.KeyCode.DpadLeft)
+
+UIS.InputBegan:Connect(function(input, gp)
+    if gp then return end
+    if input.KeyCode == Enum.KeyCode.H then bPanico:Activate() return end
+    if input.KeyCode == Enum.KeyCode.K then toggleLock(); updateUI() return end
+    if input.KeyCode == Enum.KeyCode.L then espAtivo = not espAtivo; updateUI() return end
+    onInput(input)
 end)
 
 UIS.InputEnded:Connect(function(input)
@@ -487,7 +505,8 @@ UIS.InputEnded:Connect(function(input)
     if input.KeyCode == Enum.KeyCode.ButtonL2 then held.L2 = false end
     if input.KeyCode == Enum.KeyCode.DpadRight then held.DpadRight = false end
     if input.KeyCode == Enum.KeyCode.DpadDown then held.DpadDown = false end
+    if input.KeyCode == Enum.KeyCode.DpadLeft then held.DpadLeft = false end
 end)
 
 player.CharacterRemoving:Connect(function() if ativo then pararLock() end; limparPreview() end)
-print("⚡ EZEK "..VERSAO.." Carregado! | Controles mapeados.")
+print("⚡ EZEK "..VERSAO.." Carregado! | Controles e Anti-Lag aplicados.")
