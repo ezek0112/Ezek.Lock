@@ -1,4 +1,4 @@
--- EZEK v11.1 (Inclinação pro chão e zero lag no loop)
+-- EZEK v11.2 (Sem lag de varredura)
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UIS = game:GetService("UserInputService")
@@ -10,7 +10,7 @@ for _, obj in pairs(player:WaitForChild("PlayerGui"):GetChildren()) do
 end
 pcall(function() RunService:UnbindFromRenderStep("EZEK_CAM") end)
 
-local VERSAO = "v11.1"
+local VERSAO = "v11.2"
 local FOV_GRAUS = 120 
 local ativo, alvo, espAtivo = false, nil, false
 local gyro = nil
@@ -46,29 +46,40 @@ local function getTipo(m)
     return "objetos"
 end
 
--- Busca pesada roda só 1x por segundo em background
-local function getTodos()
-    local lista, vistos = {}, {}
-    for _, p in pairs(Players:GetPlayers()) do
-        if p ~= player and p.Character and temVida(p.Character) then table.insert(lista, p.Character); vistos[p.Character]=true end
-    end
-    local function proc(pasta, prof)
-        if prof > 5 then return end 
-        for _, v in pairs(pasta:GetChildren()) do
-            if v:IsA("Model") and not vistos[v] and temVida(v) and pegarParte(v) then
-                table.insert(lista, v); vistos[v]=true
-            end
-            if v:IsA("Folder") or v:IsA("Model") then proc(v, prof+1) end
+-- 🔥 SISTEMA DE CACHE (Sem varredura no mapa, zero lag)
+local function adicionarAlvo(v)
+    if not v or v == player.Character then return end
+    if v:IsA("Model") and not table.find(alvosCache, v) then
+        local tipo = getTipo(v)
+        if tipo ~= "objetos" and temVida(v) then -- Objetos não entram no Lock, só no ESP se quiser
+            table.insert(alvosCache, v)
         end
     end
-    proc(workspace, 0)
-    return lista
 end
 
+-- Popula a lista inicial uma vez só
+for _, v in ipairs(workspace:GetDescendants()) do adicionarAlvo(v) end
+for _, p in ipairs(Players:GetPlayers()) do
+    if p ~= player and p.Character then adicionarAlvo(p.Character) end
+end
+
+-- Escuta novos bonecos nascendo no mapa
+workspace.DescendantAdded:Connect(adicionarAlvo)
+Players.PlayerAdded:Connect(function(p)
+    p.CharacterAdded:Connect(function(c) task.wait(1); adicionarAlvo(c) end)
+end)
+
+-- Loop de limpeza (só remove quem morreu/saiu, super leve)
 task.spawn(function()
     while true do
-        alvosCache = getTodos()
         task.wait(1)
+        for i = #alvosCache, 1, -1 do
+            local m = alvosCache[i]
+            if not m.Parent or not temVida(m) then
+                table.remove(alvosCache, i)
+                if espEl[m] then espEl[m].cont:Destroy(); espEl[m] = nil end
+            end
+        end
     end
 end)
 
@@ -186,7 +197,7 @@ local function atualizar()
         if cabeca then miraPos = cabeca.Position end
     end
     
-    -- Câmera olhando pro inimigo e inclinada pro chão
+    -- A inclinação e a mira que você aprovou
     local lookAtCF = CFrame.lookAt(camera.CFrame.Position, miraPos)
     camera.CFrame = lookAtCF * CFrame.Angles(math.rad(-alturaCam * 5), 0, 0)
     
