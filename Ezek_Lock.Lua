@@ -1,4 +1,4 @@
--- EZEK v11.2 (Sem lag de varredura)
+-- EZEK v11.2 (Controles: R1+R2, L1+L2, R1+DpadRight, R1+DpadDown)
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UIS = game:GetService("UserInputService")
@@ -46,40 +46,28 @@ local function getTipo(m)
     return "objetos"
 end
 
--- 🔥 SISTEMA DE CACHE (Sem varredura no mapa, zero lag)
-local function adicionarAlvo(v)
-    if not v or v == player.Character then return end
-    if v:IsA("Model") and not table.find(alvosCache, v) then
-        local tipo = getTipo(v)
-        if tipo ~= "objetos" and temVida(v) then -- Objetos não entram no Lock, só no ESP se quiser
-            table.insert(alvosCache, v)
+local function getTodos()
+    local lista, vistos = {}, {}
+    for _, p in pairs(Players:GetPlayers()) do
+        if p ~= player and p.Character and temVida(p.Character) then table.insert(lista, p.Character); vistos[p.Character]=true end
+    end
+    local function proc(pasta, prof)
+        if prof > 5 then return end 
+        for _, v in pairs(pasta:GetChildren()) do
+            if v:IsA("Model") and not vistos[v] and temVida(v) and pegarParte(v) then
+                table.insert(lista, v); vistos[v]=true
+            end
+            if v:IsA("Folder") or v:IsA("Model") then proc(v, prof+1) end
         end
     end
+    proc(workspace, 0)
+    return lista
 end
 
--- Popula a lista inicial uma vez só
-for _, v in ipairs(workspace:GetDescendants()) do adicionarAlvo(v) end
-for _, p in ipairs(Players:GetPlayers()) do
-    if p ~= player and p.Character then adicionarAlvo(p.Character) end
-end
-
--- Escuta novos bonecos nascendo no mapa
-workspace.DescendantAdded:Connect(adicionarAlvo)
-Players.PlayerAdded:Connect(function(p)
-    p.CharacterAdded:Connect(function(c) task.wait(1); adicionarAlvo(c) end)
-end)
-
--- Loop de limpeza (só remove quem morreu/saiu, super leve)
 task.spawn(function()
     while true do
+        alvosCache = getTodos()
         task.wait(1)
-        for i = #alvosCache, 1, -1 do
-            local m = alvosCache[i]
-            if not m.Parent or not temVida(m) then
-                table.remove(alvosCache, i)
-                if espEl[m] then espEl[m].cont:Destroy(); espEl[m] = nil end
-            end
-        end
     end
 end)
 
@@ -197,7 +185,6 @@ local function atualizar()
         if cabeca then miraPos = cabeca.Position end
     end
     
-    -- A inclinação e a mira que você aprovou
     local lookAtCF = CFrame.lookAt(camera.CFrame.Position, miraPos)
     camera.CFrame = lookAtCF * CFrame.Angles(math.rad(-alturaCam * 5), 0, 0)
     
@@ -446,12 +433,61 @@ floatingBtn.MouseButton1Click:Connect(function()
     floatingBtn.Visible = false
 end)
 
+-- ===================== CONTROLES =====================
+local held = {
+    R1 = false, R2 = false, L1 = false, L2 = false,
+    DpadRight = false, DpadDown = false
+}
+
 UIS.InputBegan:Connect(function(input, gp)
-    local nosso = input.KeyCode == Enum.KeyCode.K or input.KeyCode == Enum.KeyCode.L
-    if gp and not nosso then return end
+    if gp then return end
+
+    -- Teclado K / L
     if input.KeyCode == Enum.KeyCode.K then toggleLock(); updateUI() return end
     if input.KeyCode == Enum.KeyCode.L then espAtivo = not espAtivo; updateUI() return end
+
+    -- Controle
+    if input.KeyCode == Enum.KeyCode.ButtonR1 then held.R1 = true end
+    if input.KeyCode == Enum.KeyCode.ButtonR2 then held.R2 = true end
+    if input.KeyCode == Enum.KeyCode.ButtonL1 then held.L1 = true end
+    if input.KeyCode == Enum.KeyCode.ButtonL2 then held.L2 = true end
+    if input.KeyCode == Enum.KeyCode.DpadRight then held.DpadRight = true end
+    if input.KeyCode == Enum.KeyCode.DpadDown then held.DpadDown = true end
+
+    -- R1 + R2 = Lock
+    if (input.KeyCode == Enum.KeyCode.ButtonR1 and held.R2) or (input.KeyCode == Enum.KeyCode.ButtonR2 and held.R1) then
+        toggleLock(); updateUI()
+    end
+
+    -- L1 + L2 = ESP
+    if (input.KeyCode == Enum.KeyCode.ButtonL1 and held.L2) or (input.KeyCode == Enum.KeyCode.ButtonL2 and held.L1) then
+        espAtivo = not espAtivo; updateUI()
+    end
+
+    -- R1 + DpadRight = Mudar Mira (Cabeça/Peito)
+    if (input.KeyCode == Enum.KeyCode.DpadRight and held.R1) or (input.KeyCode == Enum.KeyCode.ButtonR1 and held.DpadRight) then
+        miraPeito = not miraPeito
+        bMira.Text = miraPeito and "🎯 MIRA: PEITO" or "🎯 MIRA: CABEÇA"
+    end
+
+    -- R1 + DpadDown = Mudar Inclinação
+    if (input.KeyCode == Enum.KeyCode.DpadDown and held.R1) or (input.KeyCode == Enum.KeyCode.ButtonR1 and held.DpadDown) then
+        if alturaCam == 2.0 then alturaCam = 4.0
+        elseif alturaCam == 4.0 then alturaCam = 6.0
+        elseif alturaCam == 6.0 then alturaCam = 8.0
+        else alturaCam = 2.0 end
+        bCam.Text = "📷 INCLINAÇÃO: " .. tostring(alturaCam)
+    end
+end)
+
+UIS.InputEnded:Connect(function(input)
+    if input.KeyCode == Enum.KeyCode.ButtonR1 then held.R1 = false end
+    if input.KeyCode == Enum.KeyCode.ButtonR2 then held.R2 = false end
+    if input.KeyCode == Enum.KeyCode.ButtonL1 then held.L1 = false end
+    if input.KeyCode == Enum.KeyCode.ButtonL2 then held.L2 = false end
+    if input.KeyCode == Enum.KeyCode.DpadRight then held.DpadRight = false end
+    if input.KeyCode == Enum.KeyCode.DpadDown then held.DpadDown = false end
 end)
 
 player.CharacterRemoving:Connect(function() if ativo then pararLock() end; limparPreview() end)
-print("⚡ EZEK "..VERSAO.." Carregado! | K=Lock L=ESP")
+print("⚡ EZEK "..VERSAO.." Carregado! | Controles mapeados.")
