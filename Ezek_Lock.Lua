@@ -1,4 +1,4 @@
--- EZEK v12.1 (Modo Streamer ON por padrão)
+-- EZEK v12.3 (Camera Anti-Giro + Controles PC)
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UIS = game:GetService("UserInputService")
@@ -10,10 +10,10 @@ for _, obj in pairs(player:WaitForChild("PlayerGui"):GetChildren()) do
 end
 pcall(function() RunService:UnbindFromRenderStep("EZEK_CAM") end)
 
-local VERSAO = "v12.1"
+local VERSAO = "v12.3"
 local FOV_GRAUS = 120 
 local ativo, alvo, espAtivo = false, nil, false
-local modoFantasma = true -- 🔥 JÁ COMEÇA ATIVADO
+local modoFantasma = true 
 local gyro = nil
 local hpBar = nil
 local miraPeito = false
@@ -170,9 +170,12 @@ local function atualizar()
     if h.AutoRotate then h.AutoRotate = false end
     if h.PlatformStand then h.PlatformStand = false end
 
-    if gyro then
-        local targetPos = Vector3.new(p.Position.X, r.Position.Y, p.Position.Z)
-        if (targetPos - r.Position).Magnitude > 0.1 then gyro.CFrame = CFrame.lookAt(r.Position, targetPos) end
+    local dir = (p.Position - r.Position)
+    local flat = Vector3.new(dir.X, 0, dir.Z)
+    if flat.Magnitude > 0.5 then
+        if gyro then
+            gyro.CFrame = CFrame.lookAt(r.Position, r.Position + flat.Unit)
+        end
     end
     
     if camera.CameraType ~= Enum.CameraType.Custom then camera.CameraType = Enum.CameraType.Custom end
@@ -382,7 +385,7 @@ bFantasma = mkBtn("👻 MODO STREAMER: ON", 206, function()
     bFantasma.Text = modoFantasma and "👻 MODO STREAMER: ON" or "👻 MODO STREAMER: OFF"
     bFantasma.BackgroundColor3 = modoFantasma and Color3.fromRGB(150,50,200) or Color3.fromRGB(45,45,60)
 end)
-bFantasma.BackgroundColor3 = Color3.fromRGB(150,50,200) -- 🔥 JÁ COMEÇA ROXO
+bFantasma.BackgroundColor3 = Color3.fromRGB(150,50,200)
 
 local filtFrame = Instance.new("Frame", content)
 filtFrame.Size = UDim2.new(1,0,0,126); filtFrame.Position = UDim2.new(0,0,0,250); filtFrame.BackgroundColor3 = Color3.fromRGB(30,30,40)
@@ -450,54 +453,40 @@ floatingBtn.MouseButton1Click:Connect(function()
     floatingBtn.Visible = false
 end)
 
--- ===================== CONTROLES =====================
-local held = {R1=false, R2=false, L1=false, L2=false, DpadRight=false, DpadDown=false}
-
-local function onInput(input)
-    if input.KeyCode == Enum.KeyCode.ButtonR1 then held.R1 = true end
-    if input.KeyCode == Enum.KeyCode.ButtonR2 then held.R2 = true end
-    if input.KeyCode == Enum.KeyCode.ButtonL1 then held.L1 = true end
-    if input.KeyCode == Enum.KeyCode.ButtonL2 then held.L2 = true end
-    if input.KeyCode == Enum.KeyCode.DpadRight then held.DpadRight = true end
-    if input.KeyCode == Enum.KeyCode.DpadDown then held.DpadDown = true end
-
-    if (input.KeyCode == Enum.KeyCode.ButtonR1 and held.R2) or (input.KeyCode == Enum.KeyCode.ButtonR2 and held.R1) then
-        toggleLock(); updateUI()
+-- CONTROLE HARDWARE
+local lastToggle = 0
+RunService.Heartbeat:Connect(function()
+    local state = UIS:GetGamepadState(Enum.UserInputType.Gamepad1)
+    local r1, r2, l1, l2, dRight, dDown = false, false, false, false, false, false
+    
+    for _, input in ipairs(state) do
+        if input.KeyCode == Enum.KeyCode.ButtonR1 then r1 = true end
+        if input.KeyCode == Enum.KeyCode.ButtonR2 then r2 = true end
+        if input.KeyCode == Enum.KeyCode.ButtonL1 then l1 = true end
+        if input.KeyCode == Enum.KeyCode.ButtonL2 then l2 = true end
+        if input.KeyCode == Enum.KeyCode.DpadRight then dRight = true end
+        if input.KeyCode == Enum.KeyCode.DpadDown then dDown = true end
     end
 
-    if (input.KeyCode == Enum.KeyCode.ButtonL1 and held.L2) or (input.KeyCode == Enum.KeyCode.ButtonL2 and held.L1) then
-        espAtivo = not espAtivo; updateUI()
+    if tick() - lastToggle > 0.5 then
+        if r1 and r2 then toggleLock(); updateUI(); lastToggle = tick()
+        elseif l1 and l2 then espAtivo = not espAtivo; updateUI(); lastToggle = tick()
+        elseif r1 and dRight then miraPeito = not miraPeito; bMira.Text = miraPeito and "🎯 MIRA: PEITO" or "🎯 MIRA: CABEÇA"; lastToggle = tick()
+        elseif r1 and dDown then 
+            if alturaCam == 2.0 then alturaCam = 4.0
+            elseif alturaCam == 4.0 then alturaCam = 6.0
+            elseif alturaCam == 6.0 then alturaCam = 8.0
+            else alturaCam = 2.0 end
+            bCam.Text = "📷 INCLINAÇÃO: " .. tostring(alturaCam); lastToggle = tick()
+        end
     end
-
-    if (input.KeyCode == Enum.KeyCode.DpadRight and held.R1) or (input.KeyCode == Enum.KeyCode.ButtonR1 and held.DpadRight) then
-        miraPeito = not miraPeito
-        bMira.Text = miraPeito and "🎯 MIRA: PEITO" or "🎯 MIRA: CABEÇA"
-    end
-
-    if (input.KeyCode == Enum.KeyCode.DpadDown and held.R1) or (input.KeyCode == Enum.KeyCode.ButtonR1 and held.DpadDown) then
-        if alturaCam == 2.0 then alturaCam = 4.0
-        elseif alturaCam == 4.0 then alturaCam = 6.0
-        elseif alturaCam == 6.0 then alturaCam = 8.0
-        else alturaCam = 2.0 end
-        bCam.Text = "📷 INCLINAÇÃO: " .. tostring(alturaCam)
-    end
-end
+end)
 
 UIS.InputBegan:Connect(function(input, gp)
     if gp then return end
     if input.KeyCode == Enum.KeyCode.K then toggleLock(); updateUI() return end
     if input.KeyCode == Enum.KeyCode.L then espAtivo = not espAtivo; updateUI() return end
-    onInput(input)
-end)
-
-UIS.InputEnded:Connect(function(input)
-    if input.KeyCode == Enum.KeyCode.ButtonR1 then held.R1 = false end
-    if input.KeyCode == Enum.KeyCode.ButtonR2 then held.R2 = false end
-    if input.KeyCode == Enum.KeyCode.ButtonL1 then held.L1 = false end
-    if input.KeyCode == Enum.KeyCode.ButtonL2 then held.L2 = false end
-    if input.KeyCode == Enum.KeyCode.DpadRight then held.DpadRight = false end
-    if input.KeyCode == Enum.KeyCode.DpadDown then held.DpadDown = false end
 end)
 
 player.CharacterRemoving:Connect(function() if ativo then pararLock() end; limparPreview() end)
-print("⚡ EZEK "..VERSAO.." Carregado! | Modo Streamer ativo por padrão.")
+print("⚡ EZEK "..VERSAO.." Carregado! | Camera Anti-Giro + Controle PC")
