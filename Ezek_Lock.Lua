@@ -1,4 +1,4 @@
--- EZEK v12.4 (Xbox Controller Fix)
+-- EZEK v12.6 (Preview Nítido + Controle Liberado)
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UIS = game:GetService("UserInputService")
@@ -11,7 +11,7 @@ for _, obj in pairs(player:WaitForChild("PlayerGui"):GetChildren()) do
 end
 pcall(function() RunService:UnbindFromRenderStep("EZEK_CAM") end)
 
-local VERSAO = "v12.4"
+local VERSAO = "v12.6"
 local FOV_GRAUS = 120 
 local ativo, alvo, espAtivo = false, nil, false
 local modoFantasma = true 
@@ -229,7 +229,8 @@ local function criarPreview(m)
     limparPreview()
     local cont = Instance.new("Frame", espGui); cont.BackgroundTransparency = 1; cont.Visible = false
     cont.AnchorPoint = Vector2.new(0.5, 0.5)
-    local st = Instance.new("UIStroke", cont); st.Color = Color3.fromRGB(0, 255, 0); st.Thickness = 2; st.Transparency = 0
+    -- 🔥 AQUI: Cor verde sólida, 3px de espessura e sem transparência
+    local st = Instance.new("UIStroke", cont); st.Color = Color3.fromRGB(0, 255, 0); st.Thickness = 3; st.Transparency = 0
     previewEl = {cont = cont, st = st}; previewAlvo = m
 end
 
@@ -259,7 +260,8 @@ RunService.RenderStepped:Connect(function()
                         previewEl.cont.Visible = true
                         previewEl.cont.Size = UDim2.new(0, lar, 0, alt)
                         previewEl.cont.Position = UDim2.new(0, cx, 0, cy)
-                        previewEl.st.Transparency = modoFantasma and 0.9 or 0
+                        -- 🔥 AQUI: Ignora o modo fantasma, deixa o preview sempre visível
+                        previewEl.st.Transparency = 0 
                     else previewEl.cont.Visible = false end
                 else previewEl.cont.Visible = false end
             end
@@ -454,30 +456,34 @@ floatingBtn.MouseButton1Click:Connect(function()
     floatingBtn.Visible = false
 end)
 
--- 🔥 XBOX FIX COM CONTEXT ACTION SERVICE
-local r1State, r2State = false, false
+-- 🔥 CONTROLE SEM BLOQUEIO
+local r1State, r2State, l1State, l2State = false, false, false, false
 local lastComboTime = 0
 
 CAS:BindAction("Ezek_R1", function(_, state)
-    if state == Enum.UserInputState.Begin then r1State = true end
-    if state == Enum.UserInputState.End then r1State = false end
+    r1State = (state == Enum.UserInputState.Begin)
 end, false, Enum.KeyCode.ButtonR1)
 
 CAS:BindAction("Ezek_R2", function(_, state)
-    if state == Enum.UserInputState.Begin then 
-        r2State = true
-        if r1State and tick() - lastComboTime > 0.5 then
-            toggleLock(); updateUI(); lastComboTime = tick()
-        end
+    if state == Enum.UserInputState.Begin then r2State = true else r2State = false end
+    if r1State and r2State and tick() - lastComboTime > 0.5 then
+        toggleLock(); updateUI(); lastComboTime = tick()
     end
-    if state == Enum.UserInputState.End then r2State = false end
 end, false, Enum.KeyCode.ButtonR2)
 
 CAS:BindAction("Ezek_L1", function(_, state)
-    if state == Enum.UserInputState.Begin and l2State and tick() - lastComboTime > 0.5 then
+    if state == Enum.UserInputState.Begin then l1State = true else l1State = false end
+    if l1State and l2State and tick() - lastComboTime > 0.5 then
         espAtivo = not espAtivo; updateUI(); lastComboTime = tick()
     end
 end, false, Enum.KeyCode.ButtonL1)
+
+CAS:BindAction("Ezek_L2", function(_, state)
+    if state == Enum.UserInputState.Begin then l2State = true else l2State = false end
+    if l1State and l2State and tick() - lastComboTime > 0.5 then
+        espAtivo = not espAtivo; updateUI(); lastComboTime = tick()
+    end
+end, false, Enum.KeyCode.ButtonL2)
 
 UIS.InputBegan:Connect(function(input, gp)
     if gp then return end
@@ -494,4 +500,4 @@ UIS.InputBegan:Connect(function(input, gp)
 end)
 
 player.CharacterRemoving:Connect(function() if ativo then pararLock() end; limparPreview() end)
-print("⚡ EZEK "..VERSAO.." Carregado! | Xbox Fix")
+print("⚡ EZEK "..VERSAO.." Carregado! | Preview Nítido + Controle Liberado.")
