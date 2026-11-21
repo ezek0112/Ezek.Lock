@@ -1,7 +1,8 @@
--- EZEK v12.3 (Camera Anti-Giro + Controles PC)
+-- EZEK v12.4 (Xbox Controller Fix)
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UIS = game:GetService("UserInputService")
+local CAS = game:GetService("ContextActionService")
 local player = Players.LocalPlayer
 local camera = workspace.CurrentCamera
 
@@ -10,7 +11,7 @@ for _, obj in pairs(player:WaitForChild("PlayerGui"):GetChildren()) do
 end
 pcall(function() RunService:UnbindFromRenderStep("EZEK_CAM") end)
 
-local VERSAO = "v12.3"
+local VERSAO = "v12.4"
 local FOV_GRAUS = 120 
 local ativo, alvo, espAtivo = false, nil, false
 local modoFantasma = true 
@@ -453,40 +454,44 @@ floatingBtn.MouseButton1Click:Connect(function()
     floatingBtn.Visible = false
 end)
 
--- CONTROLE HARDWARE
-local lastToggle = 0
-RunService.Heartbeat:Connect(function()
-    local state = UIS:GetGamepadState(Enum.UserInputType.Gamepad1)
-    local r1, r2, l1, l2, dRight, dDown = false, false, false, false, false, false
-    
-    for _, input in ipairs(state) do
-        if input.KeyCode == Enum.KeyCode.ButtonR1 then r1 = true end
-        if input.KeyCode == Enum.KeyCode.ButtonR2 then r2 = true end
-        if input.KeyCode == Enum.KeyCode.ButtonL1 then l1 = true end
-        if input.KeyCode == Enum.KeyCode.ButtonL2 then l2 = true end
-        if input.KeyCode == Enum.KeyCode.DpadRight then dRight = true end
-        if input.KeyCode == Enum.KeyCode.DpadDown then dDown = true end
-    end
+-- 🔥 XBOX FIX COM CONTEXT ACTION SERVICE
+local r1State, r2State = false, false
+local lastComboTime = 0
 
-    if tick() - lastToggle > 0.5 then
-        if r1 and r2 then toggleLock(); updateUI(); lastToggle = tick()
-        elseif l1 and l2 then espAtivo = not espAtivo; updateUI(); lastToggle = tick()
-        elseif r1 and dRight then miraPeito = not miraPeito; bMira.Text = miraPeito and "🎯 MIRA: PEITO" or "🎯 MIRA: CABEÇA"; lastToggle = tick()
-        elseif r1 and dDown then 
-            if alturaCam == 2.0 then alturaCam = 4.0
-            elseif alturaCam == 4.0 then alturaCam = 6.0
-            elseif alturaCam == 6.0 then alturaCam = 8.0
-            else alturaCam = 2.0 end
-            bCam.Text = "📷 INCLINAÇÃO: " .. tostring(alturaCam); lastToggle = tick()
+CAS:BindAction("Ezek_R1", function(_, state)
+    if state == Enum.UserInputState.Begin then r1State = true end
+    if state == Enum.UserInputState.End then r1State = false end
+end, false, Enum.KeyCode.ButtonR1)
+
+CAS:BindAction("Ezek_R2", function(_, state)
+    if state == Enum.UserInputState.Begin then 
+        r2State = true
+        if r1State and tick() - lastComboTime > 0.5 then
+            toggleLock(); updateUI(); lastComboTime = tick()
         end
     end
-end)
+    if state == Enum.UserInputState.End then r2State = false end
+end, false, Enum.KeyCode.ButtonR2)
+
+CAS:BindAction("Ezek_L1", function(_, state)
+    if state == Enum.UserInputState.Begin and l2State and tick() - lastComboTime > 0.5 then
+        espAtivo = not espAtivo; updateUI(); lastComboTime = tick()
+    end
+end, false, Enum.KeyCode.ButtonL1)
 
 UIS.InputBegan:Connect(function(input, gp)
     if gp then return end
     if input.KeyCode == Enum.KeyCode.K then toggleLock(); updateUI() return end
     if input.KeyCode == Enum.KeyCode.L then espAtivo = not espAtivo; updateUI() return end
+    if input.KeyCode == Enum.KeyCode.DpadRight and r1State then miraPeito = not miraPeito; bMira.Text = miraPeito and "🎯 MIRA: PEITO" or "🎯 MIRA: CABEÇA" end
+    if input.KeyCode == Enum.KeyCode.DpadDown and r1State then 
+        if alturaCam == 2.0 then alturaCam = 4.0
+        elseif alturaCam == 4.0 then alturaCam = 6.0
+        elseif alturaCam == 6.0 then alturaCam = 8.0
+        else alturaCam = 2.0 end
+        bCam.Text = "📷 INCLINAÇÃO: " .. tostring(alturaCam)
+    end
 end)
 
 player.CharacterRemoving:Connect(function() if ativo then pararLock() end; limparPreview() end)
-print("⚡ EZEK "..VERSAO.." Carregado! | Camera Anti-Giro + Controle PC")
+print("⚡ EZEK "..VERSAO.." Carregado! | Xbox Fix")
