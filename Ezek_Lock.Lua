@@ -20,8 +20,19 @@ local filtros = {players=true, dummies=true, monstros=true, objetos=true}
 local espEl = {}
 local alvosCache = {}
 local bLock, bEsp, bMira, bCam, bFantasma
+-- ⚡ CACHES (evitam re-buscar Humanoid/Parte/Tipo a cada frame = menos lag)
+local cacheHumanoid = {}
+local cacheParte    = {}
+local cacheTipo     = {}
+local function getHumanoid(m)
+    local h = cacheHumanoid[m]
+    if h and h.Parent then return h end
+    h = m:FindFirstChildOfClass("Humanoid") or m:FindFirstChildWhichIsA("Humanoid", true)
+    if h then cacheHumanoid[m] = h end
+    return h
+end
 local function getVida(m)
-    local h = m:FindFirstChildOfClass("Humanoid") or m:FindFirstChildWhichIsA("Humanoid", true)
+    local h = getHumanoid(m)
     if h then return h.Health, h.MaxHealth end
     local hp = m:GetAttribute("Health") or m:GetAttribute("HP") or m:GetAttribute("Vida")
     if type(hp) == "number" then return hp, 100 end
@@ -30,17 +41,35 @@ end
 local function temVida(m) local hp = getVida(m) return hp and hp > 0 end
 local function pegarParte(m)
     if not m then return nil end
-    if m:IsA("BasePart") then return m end
-    return m:FindFirstChild("Head") or m:FindFirstChild("HumanoidRootPart")
-        or m:FindFirstChild("UpperTorso") or m:FindFirstChild("Torso")
-        or m:FindFirstChild("Root") or m.PrimaryPart or m:FindFirstChildWhichIsA("BasePart")
+    local p = cacheParte[m]
+    if p and p.Parent then return p end
+    if m:IsA("BasePart") then
+        p = m
+    else
+        p = m:FindFirstChild("Head") or m:FindFirstChild("HumanoidRootPart")
+            or m:FindFirstChild("UpperTorso") or m:FindFirstChild("Torso")
+            or m:FindFirstChild("Root") or m.PrimaryPart or m:FindFirstChildWhichIsA("BasePart")
+    end
+    if p then cacheParte[m] = p end
+    return p
 end
 local function getTipo(m)
-    if Players:GetPlayerFromCharacter(m) then return "players" end
-    local n = string.lower(m.Name)
-    if n:find("dummy") or n:find("training") or n:find("test") then return "dummies" end
-    if m:FindFirstChildOfClass("Humanoid") or temVida(m) then return "monstros" end
-    return "objetos"
+    local t = cacheTipo[m]
+    if t then return t end
+    if Players:GetPlayerFromCharacter(m) then
+        t = "players"
+    else
+        local n = string.lower(m.Name)
+        if n:find("dummy") or n:find("training") or n:find("test") then
+            t = "dummies"
+        elseif m:FindFirstChildOfClass("Humanoid") or temVida(m) then
+            t = "monstros"
+        else
+            t = "objetos"
+        end
+    end
+    cacheTipo[m] = t
+    return t
 end
 local function getTodos()
     local lista, vistos = {}, {}
@@ -62,7 +91,11 @@ end
 task.spawn(function()
     while true do
         alvosCache = getTodos()
-        task.wait(1.5)
+        task.wait(3)
+        -- limpa os caches a cada ciclo pra não acumular lixo/memória
+        cacheHumanoid = {}
+        cacheParte = {}
+        cacheTipo = {}
     end
 end)
 local function acharAlvo()
@@ -210,6 +243,7 @@ local function criarPreview(m)
     previewEl = {cont = cont, st = st}; previewAlvo = m
 end
 local lastEspDraw = 0
+local lastAchar = 0
 RunService.RenderStepped:Connect(function()
     if tick() - lastEspDraw < 0.05 then return end
     lastEspDraw = tick()
@@ -217,9 +251,13 @@ RunService.RenderStepped:Connect(function()
     if not r then return end
     local mp = r.Position
     if not ativo then
-        local t = acharAlvo()
-        if t ~= previewAlvo then
-            if t then criarPreview(t) else limparPreview() end
+        -- busca de alvo do preview só a cada 0.2s (não precisa rodar a cada frame)
+        if tick() - lastAchar > 0.2 then
+            lastAchar = tick()
+            local t = acharAlvo()
+            if t ~= previewAlvo then
+                if t then criarPreview(t) else limparPreview() end
+            end
         end
         if previewEl and previewAlvo and previewAlvo.Parent and previewAlvo ~= player.Character then
             local p = pegarParte(previewAlvo)
@@ -403,6 +441,7 @@ floatingBtn.MouseButton1Click:Connect(function()
     floatingBtn.Visible = false
 end)
 -- ⚙️═══════════ MAPEAMENTO UNIVERSAL (troque as teclas aqui) ═══════════⚙️
+local ContextActionService = game:GetService("ContextActionService")
 local TECLAS = {
     lock   = Enum.KeyCode.K,   -- teclado: alterna LOCK
     esp    = Enum.KeyCode.L,   -- teclado: alterna ESP
@@ -426,31 +465,14 @@ local function estaSegurando(botoes)
     end
     return true
 end
--- 🔥 LEITURA PASSIVA (NÃO BLOQUEIA O JOGO) — CORRIGIDO
-UIS.InputBegan:Connect(function(input, gp)
-    -- Só ignora TECLADO quando o jogo já consumiu (ex: digitando no chat).
-    -- Controle é SEMPRE lido, mesmo que o jogo use p/ habilidade/item.
-    if input.UserInputType == Enum.UserInputType.Keyboard and gp then return end
-    local k = input.KeyCode
-    -- ── Teclado (tecla única) ──
-    if k == TECLAS.lock then toggleLock(); updateUI(); return end
-    if k == TECLAS.esp  then espAtivo = not espAtivo; updateUI(); return end
-    if k == TECLAS.mira then
-        miraPeito = not miraPeito
-        bMira.Text = miraPeito and "🎯 MIRA: PEITO" or "🎯 MIRA: CABEÇA"
-        return
-    end
-    if k == TECLAS.inclin then
-        if alturaCam == 2.0 then alturaCam = 4.0
-        elseif alturaCam == 4.0 then alturaCam = 6.0
-        elseif alturaCam == 6.0 then alturaCam = 8.0
-        else alturaCam = 2.0 end
-        bCam.Text = "📷 INCLINAÇÃO: " .. tostring(alturaCam)
-        return
-    end
-    -- ── Controle: registra o botão pressionado ──
-    held[k] = true
-    -- ── Combos (segurar dois botões juntos) ──
+local function alternarInclinacao()
+    if alturaCam == 2.0 then alturaCam = 4.0
+    elseif alturaCam == 4.0 then alturaCam = 6.0
+    elseif alturaCam == 6.0 then alturaCam = 8.0
+    else alturaCam = 2.0 end
+    bCam.Text = "📷 INCLINAÇÃO: " .. tostring(alturaCam)
+end
+local function processarCombos()
     if tick() - lastCombo > 0.5 then
         if estaSegurando(TECLAS.lockCombo) then
             toggleLock(); updateUI(); lastCombo = tick()
@@ -461,17 +483,49 @@ UIS.InputBegan:Connect(function(input, gp)
             bMira.Text = miraPeito and "🎯 MIRA: PEITO" or "🎯 MIRA: CABEÇA"
             lastCombo = tick()
         elseif estaSegurando(TECLAS.inclinCombo) then
-            if alturaCam == 2.0 then alturaCam = 4.0
-            elseif alturaCam == 4.0 then alturaCam = 6.0
-            elseif alturaCam == 6.0 then alturaCam = 8.0
-            else alturaCam = 2.0 end
-            bCam.Text = "📷 INCLINAÇÃO: " .. tostring(alturaCam)
+            alternarInclinacao()
             lastCombo = tick()
         end
     end
+end
+-- ⌨️ TECLADO (passivo, não bloqueia o jogo)
+UIS.InputBegan:Connect(function(input, gp)
+    if input.UserInputType ~= Enum.UserInputType.Keyboard then return end
+    if gp then return end  -- evita ativar quando digita no chat
+    local k = input.KeyCode
+    if k == TECLAS.lock then toggleLock(); updateUI() return end
+    if k == TECLAS.esp  then espAtivo = not espAtivo; updateUI() return end
+    if k == TECLAS.mira then
+        miraPeito = not miraPeito
+        bMira.Text = miraPeito and "🎯 MIRA: PEITO" or "🎯 MIRA: CABEÇA"
+        return
+    end
+    if k == TECLAS.inclin then alternarInclinacao() return end
 end)
-UIS.InputEnded:Connect(function(input)
-    held[input.KeyCode] = false
-end)
+-- 🎮 CONTROLE (ContextActionService: LÊ o botão E deixa o jogo usar junto)
+-- O jogo "consome" R1/R2/L1/L2, então o UserInputService nunca via esses botões.
+-- Aqui lemos pelo mesmo canal do jogo, com prioridade MÁXIMA, e devolvemos com
+-- "Pass" pra habilidade/item continuar funcionando normalmente.
+ContextActionService:BindActionAtPriority(
+    "EZEK_Gamepad",
+    function(_, inputState, input)
+        local k = input.KeyCode
+        if inputState == Enum.UserInputState.Begin then
+            held[k] = true
+            processarCombos()
+        elseif inputState == Enum.UserInputState.End then
+            held[k] = false
+        end
+        return Enum.ContextActionResult.Pass
+    end,
+    false,
+    Enum.ContextActionPriority.System.Value,  -- prioridade máxima (2500)
+    Enum.KeyCode.ButtonR1,
+    Enum.KeyCode.ButtonR2,
+    Enum.KeyCode.ButtonL1,
+    Enum.KeyCode.ButtonL2,
+    Enum.KeyCode.DpadRight,
+    Enum.KeyCode.DpadDown
+)
 player.CharacterRemoving:Connect(function() if ativo then pararLock() end; limparPreview() end)
 print("⚡ EZEK "..VERSAO.." Carregado! | Controle 100% Liberado.")
