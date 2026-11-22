@@ -488,44 +488,73 @@ local function processarCombos()
         end
     end
 end
--- ⌨️ TECLADO (passivo, não bloqueia o jogo)
+-- 🔎 diagnóstico: imprime UMA vez quando detectar o controle
+local controleDetectado = false
+local function logarControle()
+    if not controleDetectado then
+        controleDetectado = true
+        print("🎮 EZEK: controle detectado!")
+    end
+end
+-- ⌨️+🎮 LEITURA DE INPUT (dupla garantia, nunca bloqueia o jogo)
 UIS.InputBegan:Connect(function(input, gp)
-    if input.UserInputType ~= Enum.UserInputType.Keyboard then return end
-    if gp then return end  -- evita ativar quando digita no chat
+    local tipo = input.UserInputType
     local k = input.KeyCode
-    if k == TECLAS.lock then toggleLock(); updateUI() return end
-    if k == TECLAS.esp  then espAtivo = not espAtivo; updateUI() return end
-    if k == TECLAS.mira then
-        miraPeito = not miraPeito
-        bMira.Text = miraPeito and "🎯 MIRA: PEITO" or "🎯 MIRA: CABEÇA"
+    -- TECLADO: teclas únicas (ignora quando o jogo consumiu, ex: chat)
+    if tipo == Enum.UserInputType.Keyboard then
+        if gp then return end
+        if k == TECLAS.lock then toggleLock(); updateUI() return end
+        if k == TECLAS.esp  then espAtivo = not espAtivo; updateUI() return end
+        if k == TECLAS.mira then
+            miraPeito = not miraPeito
+            bMira.Text = miraPeito and "🎯 MIRA: PEITO" or "🎯 MIRA: CABEÇA"
+            return
+        end
+        if k == TECLAS.inclin then alternarInclinacao() return end
         return
     end
-    if k == TECLAS.inclin then alternarInclinacao() return end
+    -- CONTROLE: lê SEMPRE, mesmo se o jogo "consome" o botão
+    if tipo == Enum.UserInputType.Gamepad1 or tipo == Enum.UserInputType.Gamepad2 then
+        logarControle()
+        held[k] = true
+        processarCombos()
+    end
 end)
--- 🎮 CONTROLE (ContextActionService: LÊ o botão E deixa o jogo usar junto)
--- O jogo "consome" R1/R2/L1/L2, então o UserInputService nunca via esses botões.
--- Aqui lemos pelo mesmo canal do jogo, com prioridade MÁXIMA, e devolvemos com
--- "Pass" pra habilidade/item continuar funcionando normalmente.
-ContextActionService:BindActionAtPriority(
-    "EZEK_Gamepad",
-    function(_, inputState, input)
-        local k = input.KeyCode
-        if inputState == Enum.UserInputState.Begin then
-            held[k] = true
-            processarCombos()
-        elseif inputState == Enum.UserInputState.End then
-            held[k] = false
-        end
-        return Enum.ContextActionResult.Pass
-    end,
-    false,
-    Enum.ContextActionPriority.System.Value,  -- prioridade máxima (2500)
-    Enum.KeyCode.ButtonR1,
-    Enum.KeyCode.ButtonR2,
-    Enum.KeyCode.ButtonL1,
-    Enum.KeyCode.ButtonL2,
-    Enum.KeyCode.DpadRight,
-    Enum.KeyCode.DpadDown
-)
+UIS.InputEnded:Connect(function(input)
+    local t = input.UserInputType
+    if t == Enum.UserInputType.Gamepad1 or t == Enum.UserInputType.Gamepad2 then
+        held[input.KeyCode] = false
+    end
+end)
+-- 🎮 CONTROLE também via ContextActionService (segunda leitura de garantia).
+-- Retorna "Pass" pra devolver o botão pro jogo => habilidade/item continua
+-- funcionando AO MESMO TEMPO que o Lock/ESP do script.
+local ok, err = pcall(function()
+    ContextActionService:BindActionAtPriority(
+        "EZEK_Gamepad",
+        function(_, inputState, input)
+            local k = input.KeyCode
+            if inputState == Enum.UserInputState.Begin then
+                logarControle()
+                held[k] = true
+                processarCombos()
+            elseif inputState == Enum.UserInputState.End then
+                held[k] = false
+            end
+            return Enum.ContextActionResult.Pass
+        end,
+        false,
+        3000,  -- prioridade acima de tudo (System=2500, Default=2000)
+        Enum.KeyCode.ButtonR1,
+        Enum.KeyCode.ButtonR2,
+        Enum.KeyCode.ButtonL1,
+        Enum.KeyCode.ButtonL2,
+        Enum.KeyCode.DpadRight,
+        Enum.KeyCode.DpadDown
+    )
+end)
+if not ok then
+    warn("❌ EZEK: falha ao registrar controle via ContextActionService:", err)
+end
 player.CharacterRemoving:Connect(function() if ativo then pararLock() end; limparPreview() end)
 print("⚡ EZEK "..VERSAO.." Carregado! | Controle 100% Liberado.")
