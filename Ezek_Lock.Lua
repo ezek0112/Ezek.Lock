@@ -1,4 +1,4 @@
--- EZEK v15.0 (Controle 100% Liberado para o Jogo) — MAPEAMENTO CORRIGIDO
+-- EZEK v15.1 (Controle 100% Liberado + Mapeamento Ajustado)
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UIS = game:GetService("UserInputService")
@@ -8,7 +8,7 @@ for _, obj in pairs(player:WaitForChild("PlayerGui"):GetChildren()) do
     if obj.Name:find("EZEK") then obj:Destroy() end
 end
 pcall(function() RunService:UnbindFromRenderStep("EZEK_CAM") end)
-local VERSAO = "v15.0"
+local VERSAO = "v15.1"
 local FOV_GRAUS = 120 
 local ativo, alvo, espAtivo = false, nil, false
 local modoFantasma = true 
@@ -440,10 +440,9 @@ floatingBtn.MouseButton1Click:Connect(function()
     main.Visible = true
     floatingBtn.Visible = false
 end)
+
 -- ⚙️═══════════ MAPEAMENTO DO CONTROLE (XBOX) ═══════════⚙️
--- ButtonR1 = RB | ButtonR2 = RT | ButtonL1 = LB | ButtonL2 = LT
 local r1, r2, l1, l2 = false, false, false, false
--- Funções de ação (chamadas direto, sem depender de clique no botão)
 local function acaoLock() toggleLock(); updateUI() end
 local function acaoEsp() espAtivo = not espAtivo; updateUI() end
 local function acaoMira()
@@ -457,28 +456,49 @@ local function acaoCam()
     else alturaCam = 2.0 end
     bCam.Text = "📷 INCLINAÇÃO: " .. tostring(alturaCam)
 end
+local function acaoFantasma()
+    modoFantasma = not modoFantasma
+    bFantasma.Text = modoFantasma and "👻 MODO STREAMER: ON" or "👻 MODO STREAMER: OFF"
+    bFantasma.BackgroundColor3 = modoFantasma and Color3.fromRGB(150,50,200) or Color3.fromRGB(45,45,60)
+end
+local function acaoTiltPadrao()
+    alturaCam = 0.0
+    bCam.Text = "📷 INCLINAÇÃO: PADRÃO"
+end
+
 UIS.InputBegan:Connect(function(input, gp)
     local n = input.KeyCode == Enum.KeyCode.K or input.KeyCode == Enum.KeyCode.L
         or input.KeyCode == Enum.KeyCode.M or input.KeyCode == Enum.KeyCode.N
+        or input.KeyCode == Enum.KeyCode.G or input.KeyCode == Enum.KeyCode.T
         or input.KeyCode == Enum.KeyCode.ButtonR1 or input.KeyCode == Enum.KeyCode.ButtonR2
         or input.KeyCode == Enum.KeyCode.ButtonL1 or input.KeyCode == Enum.KeyCode.ButtonL2
+        or input.KeyCode == Enum.KeyCode.ButtonL3
         or input.KeyCode == Enum.KeyCode.DpadRight or input.KeyCode == Enum.KeyCode.DpadDown
+        or input.KeyCode == Enum.KeyCode.DpadLeft
     if gp and not n then return end
     -- Teclado
     if input.KeyCode == Enum.KeyCode.K then acaoLock() end
     if input.KeyCode == Enum.KeyCode.L then acaoEsp() end
     if input.KeyCode == Enum.KeyCode.M then acaoMira() end
     if input.KeyCode == Enum.KeyCode.N then acaoCam() end
+    if input.KeyCode == Enum.KeyCode.G then acaoFantasma() end
+    if input.KeyCode == Enum.KeyCode.T then acaoTiltPadrao() end
+    
     -- Controle Xbox (RB/RT/LB/LT)
     if input.KeyCode == Enum.KeyCode.ButtonR1 then r1 = true end   -- RB
     if input.KeyCode == Enum.KeyCode.ButtonR2 then r2 = true end   -- RT
     if input.KeyCode == Enum.KeyCode.ButtonL1 then l1 = true end   -- LB
     if input.KeyCode == Enum.KeyCode.ButtonL2 then l2 = true end   -- LT
-    -- Combos: RB+RT = LOCK | LB+LT = ESP | RB+Dpad→ = MIRA | RB+Dpad↓ = INCLINAÇÃO
+    
+    -- Botão L3 (Inclinação Padrão)
+    if input.KeyCode == Enum.KeyCode.ButtonL3 then acaoTiltPadrao() end 
+
+    -- Combos: RB+RT = LOCK | LB+LT = ESP | RB+Dpad→ = MIRA | RB+Dpad↓ = INCLINAÇÃO | RB+Dpad← = RESET INCLINAÇÃO
     if r1 and r2 then acaoLock(); r1=false; r2=false end
     if l1 and l2 then acaoEsp(); l1=false; l2=false end
     if r1 and input.KeyCode == Enum.KeyCode.DpadRight then acaoMira(); r1=false end
     if r1 and input.KeyCode == Enum.KeyCode.DpadDown then acaoCam(); r1=false end
+    if r1 and input.KeyCode == Enum.KeyCode.DpadLeft then acaoTiltPadrao(); r1=false end
 end)
 UIS.InputEnded:Connect(function(input)
     if input.KeyCode == Enum.KeyCode.ButtonR1 then r1 = false end
