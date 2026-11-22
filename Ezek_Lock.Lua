@@ -440,8 +440,23 @@ floatingBtn.MouseButton1Click:Connect(function()
     main.Visible = true
     floatingBtn.Visible = false
 end)
--- ⚙️═══════════ MAPEAMENTO (igual ao v32.1 que funciona) ═══════════⚙️
+-- ⚙️═══════════ MAPEAMENTO DO CONTROLE (XBOX) ═══════════⚙️
+-- ButtonR1 = RB | ButtonR2 = RT | ButtonL1 = LB | ButtonL2 = LT
 local r1, r2, l1, l2 = false, false, false, false
+-- Funções de ação (chamadas direto, sem depender de clique no botão)
+local function acaoLock() toggleLock(); updateUI() end
+local function acaoEsp() espAtivo = not espAtivo; updateUI() end
+local function acaoMira()
+    miraPeito = not miraPeito
+    bMira.Text = miraPeito and "🎯 MIRA: PEITO" or "🎯 MIRA: CABEÇA"
+end
+local function acaoCam()
+    if alturaCam == 2.0 then alturaCam = 4.0
+    elseif alturaCam == 4.0 then alturaCam = 6.0
+    elseif alturaCam == 6.0 then alturaCam = 8.0
+    else alturaCam = 2.0 end
+    bCam.Text = "📷 INCLINAÇÃO: " .. tostring(alturaCam)
+end
 UIS.InputBegan:Connect(function(input, gp)
     local n = input.KeyCode == Enum.KeyCode.K or input.KeyCode == Enum.KeyCode.L
         or input.KeyCode == Enum.KeyCode.M or input.KeyCode == Enum.KeyCode.N
@@ -450,19 +465,20 @@ UIS.InputBegan:Connect(function(input, gp)
         or input.KeyCode == Enum.KeyCode.DpadRight or input.KeyCode == Enum.KeyCode.DpadDown
     if gp and not n then return end
     -- Teclado
-    if input.KeyCode == Enum.KeyCode.K then bLock:Activate() end
-    if input.KeyCode == Enum.KeyCode.L then bEsp:Activate() end
-    if input.KeyCode == Enum.KeyCode.M then bMira:Activate() end
-    if input.KeyCode == Enum.KeyCode.N then bCam:Activate() end
-    -- Controle
-    if input.KeyCode == Enum.KeyCode.ButtonR1 then r1 = true end
-    if input.KeyCode == Enum.KeyCode.ButtonR2 then r2 = true end
-    if input.KeyCode == Enum.KeyCode.ButtonL1 then l1 = true end
-    if input.KeyCode == Enum.KeyCode.ButtonL2 then l2 = true end
-    if r1 and r2 then bLock:Activate(); r1=false; r2=false end
-    if l1 and l2 then bEsp:Activate(); l1=false; l2=false end
-    if r1 and input.KeyCode == Enum.KeyCode.DpadRight then bMira:Activate(); r1=false end
-    if r1 and input.KeyCode == Enum.KeyCode.DpadDown then bCam:Activate(); r1=false end
+    if input.KeyCode == Enum.KeyCode.K then acaoLock() end
+    if input.KeyCode == Enum.KeyCode.L then acaoEsp() end
+    if input.KeyCode == Enum.KeyCode.M then acaoMira() end
+    if input.KeyCode == Enum.KeyCode.N then acaoCam() end
+    -- Controle Xbox (RB/RT/LB/LT)
+    if input.KeyCode == Enum.KeyCode.ButtonR1 then r1 = true end   -- RB
+    if input.KeyCode == Enum.KeyCode.ButtonR2 then r2 = true end   -- RT
+    if input.KeyCode == Enum.KeyCode.ButtonL1 then l1 = true end   -- LB
+    if input.KeyCode == Enum.KeyCode.ButtonL2 then l2 = true end   -- LT
+    -- Combos: RB+RT = LOCK | LB+LT = ESP | RB+Dpad→ = MIRA | RB+Dpad↓ = INCLINAÇÃO
+    if r1 and r2 then acaoLock(); r1=false; r2=false end
+    if l1 and l2 then acaoEsp(); l1=false; l2=false end
+    if r1 and input.KeyCode == Enum.KeyCode.DpadRight then acaoMira(); r1=false end
+    if r1 and input.KeyCode == Enum.KeyCode.DpadDown then acaoCam(); r1=false end
 end)
 UIS.InputEnded:Connect(function(input)
     if input.KeyCode == Enum.KeyCode.ButtonR1 then r1 = false end
