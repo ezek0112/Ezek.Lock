@@ -1,4 +1,4 @@
--- EZEK v13.0 (Controle 100% Liberado para o Jogo) — MAPEAMENTO CORRIGIDO
+-- EZEK v15.0 (Controle 100% Liberado para o Jogo) — MAPEAMENTO CORRIGIDO
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UIS = game:GetService("UserInputService")
@@ -8,7 +8,7 @@ for _, obj in pairs(player:WaitForChild("PlayerGui"):GetChildren()) do
     if obj.Name:find("EZEK") then obj:Destroy() end
 end
 pcall(function() RunService:UnbindFromRenderStep("EZEK_CAM") end)
-local VERSAO = "v13.0"
+local VERSAO = "v15.0"
 local FOV_GRAUS = 120 
 local ativo, alvo, espAtivo = false, nil, false
 local modoFantasma = true 
@@ -322,7 +322,7 @@ RunService.RenderStepped:Connect(function()
     end
 end)
 local sg = Instance.new("ScreenGui", player.PlayerGui)
-sg.Name = "EZEK_GUI_v13"; sg.ResetOnSpawn = false
+sg.Name = "EZEK_GUI_v15"; sg.ResetOnSpawn = false
 local main = Instance.new("Frame", sg)
 main.Size = UDim2.new(0, 200, 0, 470); main.Position = UDim2.new(0, 15, 0, 60)
 main.BackgroundColor3 = Color3.fromRGB(20,20,25); main.BorderSizePixel = 0; main.Active = true
@@ -440,103 +440,35 @@ floatingBtn.MouseButton1Click:Connect(function()
     main.Visible = true
     floatingBtn.Visible = false
 end)
--- ⚙️═══════════ MAPEAMENTO DO CONTROLE (igual ao que funcionou no v15) ═══════════⚙️
-local ContextActionService = game:GetService("ContextActionService")
-local held = {}
-local lastCombo = 0
-local COMBO = {
-    lock   = {Enum.KeyCode.ButtonR1, Enum.KeyCode.ButtonR2},
-    esp    = {Enum.KeyCode.ButtonL1, Enum.KeyCode.ButtonL2},
-    mira   = {Enum.KeyCode.ButtonR1, Enum.KeyCode.DpadRight},
-    inclin = {Enum.KeyCode.ButtonR1, Enum.KeyCode.DpadDown},
-}
-local function isHolding(keys)
-    for _, k in ipairs(keys) do
-        if not held[k] then return false end
-    end
-    return true
-end
-local function alternarInclinacao()
-    if alturaCam == 2.0 then alturaCam = 4.0
-    elseif alturaCam == 4.0 then alturaCam = 6.0
-    elseif alturaCam == 6.0 then alturaCam = 8.0
-    else alturaCam = 2.0 end
-    bCam.Text = "📷 INCLINAÇÃO: " .. tostring(alturaCam)
-end
-local function processarCombos()
-    if tick() - lastCombo < 0.5 then return end
-    if isHolding(COMBO.lock) then
-        print("✅ COMBO: LOCK ativado!")
-        toggleLock(); updateUI(); lastCombo = tick()
-    elseif isHolding(COMBO.esp) then
-        print("✅ COMBO: ESP ativado!")
-        espAtivo = not espAtivo; updateUI(); lastCombo = tick()
-    elseif isHolding(COMBO.mira) then
-        print("✅ COMBO: MIRA ativado!")
-        miraPeito = not miraPeito
-        bMira.Text = miraPeito and "🎯 MIRA: PEITO" or "🎯 MIRA: CABEÇA"
-        lastCombo = tick()
-    elseif isHolding(COMBO.inclin) then
-        print("✅ COMBO: INCLINAÇÃO ativado!")
-        alternarInclinacao()
-        lastCombo = tick()
-    end
-end
--- ⌨️ TECLADO (passivo, não bloqueia o jogo)
+-- ⚙️═══════════ MAPEAMENTO (igual ao v32.1 que funciona) ═══════════⚙️
+local r1, r2, l1, l2 = false, false, false, false
 UIS.InputBegan:Connect(function(input, gp)
-    if input.UserInputType ~= Enum.UserInputType.Keyboard then return end
-    if gp then return end
-    local k = input.KeyCode
-    if k == Enum.KeyCode.K then toggleLock(); updateUI() return end
-    if k == Enum.KeyCode.L then espAtivo = not espAtivo; updateUI() return end
-    if k == Enum.KeyCode.M then
-        miraPeito = not miraPeito
-        bMira.Text = miraPeito and "🎯 MIRA: PEITO" or "🎯 MIRA: CABEÇA"
-        return
-    end
-    if k == Enum.KeyCode.N then alternarInclinacao() return end
-end)
--- 🎮 CONTROLE (leitura passiva — devolve o botão pro jogo)
-UIS.InputBegan:Connect(function(input)
-    local t = input.UserInputType
-    if t == Enum.UserInputType.Gamepad1 or t == Enum.UserInputType.Gamepad2 then
-        print("🎮 [UIS] Botão pressionado:", tostring(input.KeyCode))
-        held[input.KeyCode] = true
-        processarCombos()
-    end
+    local n = input.KeyCode == Enum.KeyCode.K or input.KeyCode == Enum.KeyCode.L
+        or input.KeyCode == Enum.KeyCode.M or input.KeyCode == Enum.KeyCode.N
+        or input.KeyCode == Enum.KeyCode.ButtonR1 or input.KeyCode == Enum.KeyCode.ButtonR2
+        or input.KeyCode == Enum.KeyCode.ButtonL1 or input.KeyCode == Enum.KeyCode.ButtonL2
+        or input.KeyCode == Enum.KeyCode.DpadRight or input.KeyCode == Enum.KeyCode.DpadDown
+    if gp and not n then return end
+    -- Teclado
+    if input.KeyCode == Enum.KeyCode.K then bLock:Activate() end
+    if input.KeyCode == Enum.KeyCode.L then bEsp:Activate() end
+    if input.KeyCode == Enum.KeyCode.M then bMira:Activate() end
+    if input.KeyCode == Enum.KeyCode.N then bCam:Activate() end
+    -- Controle
+    if input.KeyCode == Enum.KeyCode.ButtonR1 then r1 = true end
+    if input.KeyCode == Enum.KeyCode.ButtonR2 then r2 = true end
+    if input.KeyCode == Enum.KeyCode.ButtonL1 then l1 = true end
+    if input.KeyCode == Enum.KeyCode.ButtonL2 then l2 = true end
+    if r1 and r2 then bLock:Activate(); r1=false; r2=false end
+    if l1 and l2 then bEsp:Activate(); l1=false; l2=false end
+    if r1 and input.KeyCode == Enum.KeyCode.DpadRight then bMira:Activate(); r1=false end
+    if r1 and input.KeyCode == Enum.KeyCode.DpadDown then bCam:Activate(); r1=false end
 end)
 UIS.InputEnded:Connect(function(input)
-    local t = input.UserInputType
-    if t == Enum.UserInputType.Gamepad1 or t == Enum.UserInputType.Gamepad2 then
-        held[input.KeyCode] = false
-    end
+    if input.KeyCode == Enum.KeyCode.ButtonR1 then r1 = false end
+    if input.KeyCode == Enum.KeyCode.ButtonR2 then r2 = false end
+    if input.KeyCode == Enum.KeyCode.ButtonL1 then l1 = false end
+    if input.KeyCode == Enum.KeyCode.ButtonL2 then l2 = false end
 end)
--- 🎮 CONTROLE também via ContextActionService (pega mesmo se o jogo consumir o botão)
-local ok, err = pcall(function()
-    ContextActionService:BindActionAtPriority(
-        "EZEK_GP",
-        function(_, inputState, input)
-            if inputState == Enum.UserInputState.Begin then
-                print("🎮 [CAS] Botão pressionado:", tostring(input.KeyCode))
-                held[input.KeyCode] = true
-                processarCombos()
-            elseif inputState == Enum.UserInputState.End then
-                held[input.KeyCode] = false
-            end
-            return Enum.ContextActionResult.Pass
-        end,
-        false,
-        3000,
-        Enum.KeyCode.ButtonR1,
-        Enum.KeyCode.ButtonR2,
-        Enum.KeyCode.ButtonL1,
-        Enum.KeyCode.ButtonL2,
-        Enum.KeyCode.DpadRight,
-        Enum.KeyCode.DpadDown
-    )
-end)
-if not ok then
-    warn("❌ EZEK: falha ao registrar controle:", err)
-end
 player.CharacterRemoving:Connect(function() if ativo then pararLock() end; limparPreview() end)
 print("⚡ EZEK "..VERSAO.." Carregado! | Controle 100% Liberado.")
